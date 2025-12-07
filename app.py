@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from binomial_engine import BinomialModel
+from binomial_engine import BinomialModel, MultiLegGreeksCalculator
 from strategy_manager import ShortCondor, StrategyParams, StrategyExecutor
 from market_data import MarketDataProvider, AVAILABLE_STOCKS
 
@@ -484,50 +484,36 @@ def main():
     st.divider()
     st.header("📈 Évolution des Greeks")
     st.markdown("*Comprendre comment les risques changent avec le prix de l'action*")
+    st.info("💡 **Calcul Vectorisé Professionnel** - Comme les pricers des hedge funds")
     
     try:
         # Créer une range de prix pour les Greeks
-        spot_range_greeks = np.linspace(spot_price * 0.7, spot_price * 1.3, 30)
         spot_range_greeks = np.linspace(spot_price * 0.7, spot_price * 1.3, 50)
         
-        # Calculer les Greeks pour la stratégie Short Condor
-        # Simple et transparent: 4 graphiques séparés
+        # Définir les legs du Short Condor: -K1 +K2 +K3 -K4
+        legs_config = [
+            {'K': K1, 'type': 'call', 'sign': -1},   # Vendre K1 Call
+            {'K': K2, 'type': 'call', 'sign': +1},   # Acheter K2 Call
+            {'K': K3, 'type': 'put', 'sign': +1},    # Acheter K3 Put
+            {'K': K4, 'type': 'put', 'sign': -1}     # Vendre K4 Put
+        ]
         
-        delta_list = []
-        gamma_list = []
-        theta_list = []
-        vega_list = []
+        # Créer le calculateur professionnel
+        greeks_calc = MultiLegGreeksCalculator(
+            spot_range=spot_range_greeks,
+            legs=legs_config,
+            interest_rate=interest_rate,
+            time_to_maturity=maturity,
+            volatility=volatility,
+            n_steps=N_steps
+        )
         
-        for S in spot_range_greeks:
-            # Calculer les Greeks pour chaque leg
-            model_k1 = BinomialModel(S=S, K=K1, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
-            g_k1 = model_k1.calculate_greeks(np.array([S]), 'call')
-            
-            model_k2 = BinomialModel(S=S, K=K2, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
-            g_k2 = model_k2.calculate_greeks(np.array([S]), 'call')
-            
-            model_k3 = BinomialModel(S=S, K=K3, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
-            g_k3 = model_k3.calculate_greeks(np.array([S]), 'put')
-            
-            model_k4 = BinomialModel(S=S, K=K4, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
-            g_k4 = model_k4.calculate_greeks(np.array([S]), 'put')
-            
-            # Short Condor: -K1 +K2 +K3 -K4
-            delta = -g_k1['delta'][0] + g_k2['delta'][0] + g_k3['delta'][0] - g_k4['delta'][0]
-            gamma = -g_k1['gamma'][0] + g_k2['gamma'][0] + g_k3['gamma'][0] - g_k4['gamma'][0]
-            theta = -g_k1['theta'][0] + g_k2['theta'][0] + g_k3['theta'][0] - g_k4['theta'][0]
-            vega = -g_k1['vega'][0] + g_k2['vega'][0] + g_k3['vega'][0] - g_k4['vega'][0]
-            
-            delta_list.append(float(delta))
-            gamma_list.append(float(gamma))
-            theta_list.append(float(theta))
-            vega_list.append(float(vega))
-        
-        # Convertir en arrays
-        delta_arr = np.array(delta_list)
-        gamma_arr = np.array(gamma_list)
-        theta_arr = np.array(theta_list)
-        vega_arr = np.array(vega_list)
+        # Calculer les Greeks de la stratégie (vectorisé)
+        strategy_greeks = greeks_calc.calculate_strategy_greeks()
+        delta_arr = strategy_greeks['delta']
+        gamma_arr = strategy_greeks['gamma']
+        theta_arr = strategy_greeks['theta']
+        vega_arr = strategy_greeks['vega']
         
         # 4 graphiques séparés - un pour chaque Greek
         col1, col2 = st.columns(2)
@@ -535,6 +521,7 @@ def main():
         # DELTA
         with col1:
             st.subheader("Delta (Δ) - Sensibilité au Spot")
+            st.caption("Variation du prix pour €1 de hausse du spot | Court Condor: proche de 0 = delta-neutre ✓")
             fig_delta = go.Figure()
             fig_delta.add_trace(go.Scatter(
                 x=spot_range_greeks, y=delta_arr,
@@ -556,6 +543,7 @@ def main():
         # GAMMA
         with col2:
             st.subheader("Gamma (Γ) - Accélération")
+            st.caption("Vitesse de changement du Delta | Négatif = perte si prix se déplace")
             fig_gamma = go.Figure()
             fig_gamma.add_trace(go.Scatter(
                 x=spot_range_greeks, y=gamma_arr,
@@ -577,6 +565,7 @@ def main():
         # THETA
         with col1:
             st.subheader("Theta (Θ) - Décroissance Temporelle")
+            st.caption("Gain/Perte par jour de passage du temps | Positif = profit à chaque jour")
             fig_theta = go.Figure()
             fig_theta.add_trace(go.Scatter(
                 x=spot_range_greeks, y=theta_arr,
@@ -598,6 +587,7 @@ def main():
         # VEGA
         with col2:
             st.subheader("Vega (ν) - Sensibilité Volatilité")
+            st.caption("Variation pour +1% de volatilité | Court Condor = court gamma = court vega")
             fig_vega = go.Figure()
             fig_vega.add_trace(go.Scatter(
                 x=spot_range_greeks, y=vega_arr,
@@ -616,19 +606,36 @@ def main():
             )
             st.plotly_chart(fig_vega, use_container_width=True)
         
-        # Afficher les valeurs actuelles
+        # Afficher les valeurs actuelles au spot price
         st.divider()
-        closest_idx = int(np.argmin(np.abs(spot_range_greeks - spot_price)))
+        st.subheader("📌 Greeks au Prix Actuel")
+        current_greeks = greeks_calc.get_greeks_at_spot(spot_price)
         
         col_vals1, col_vals2, col_vals3, col_vals4 = st.columns(4)
         with col_vals1:
-            st.metric("Delta", f"{delta_arr[closest_idx]:.6f}")
+            st.metric(
+                "Delta", 
+                f"{current_greeks['delta']:.6f}",
+                help="Sensibilité au prix spot"
+            )
         with col_vals2:
-            st.metric("Gamma", f"{gamma_arr[closest_idx]:.6f}")
+            st.metric(
+                "Gamma", 
+                f"{current_greeks['gamma']:.6f}",
+                help="Convexité (risque de mouvement)"
+            )
         with col_vals3:
-            st.metric("Theta", f"{theta_arr[closest_idx]:.6f}")
+            st.metric(
+                "Theta", 
+                f"{current_greeks['theta']:.6f}",
+                help="Profit quotidien si spot stable"
+            )
         with col_vals4:
-            st.metric("Vega", f"{vega_arr[closest_idx]:.6f}")
+            st.metric(
+                "Vega", 
+                f"{current_greeks['vega']:.6f}",
+                help="Sensibilité à la volatilité implicite"
+            )
     
     except Exception as e:
         st.error(f"❌ Erreur dans les Greeks: {str(e)}")

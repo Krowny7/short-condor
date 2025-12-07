@@ -269,3 +269,147 @@ class BinomialModel:
             greeks['vega'].append(vega)
         
         return {k: np.array(v) for k, v in greeks.items()}
+
+
+class MultiLegGreeksCalculator:
+    """
+    Professional-grade Greeks calculator for multi-leg options strategies.
+    
+    Vectorized computation: creates 1 model per leg, then calculates all Greeks
+    for all spot prices in ONE pass per leg. This is how real pricers work.
+    
+    Supports arbitrary combinations like Short Condor: -K1 +K2 +K3 -K4
+    """
+    
+    def __init__(self, spot_range: np.ndarray, legs: List[Dict], 
+                 interest_rate: float, time_to_maturity: float, 
+                 volatility: float, n_steps: int = 50):
+        """
+        Initialize multi-leg Greeks calculator.
+        
+        Parameters:
+        -----------
+        spot_range : np.ndarray
+            Array of spot prices to evaluate Greeks over
+        legs : List[Dict]
+            List of dictionaries with structure:
+            {'K': strike, 'type': 'call' or 'put', 'sign': 1 for long, -1 for short}
+            Example for Short Condor: 
+            [
+                {'K': 95, 'type': 'call', 'sign': -1},   # -K1
+                {'K': 98, 'type': 'call', 'sign': +1},   # +K2
+                {'K': 102, 'type': 'put', 'sign': +1},   # +K3
+                {'K': 105, 'type': 'put', 'sign': -1}    # -K4
+            ]
+        interest_rate : float
+            Annual risk-free rate (decimal)
+        time_to_maturity : float
+            Time to expiration in years
+        volatility : float
+            Annual volatility (decimal)
+        n_steps : int
+            Number of binomial tree steps
+        """
+        self.spot_range = spot_range
+        self.legs = legs
+        self.r = interest_rate
+        self.T = time_to_maturity
+        self.sigma = volatility
+        self.N = n_steps
+        
+        # Pre-compute Greeks for each leg (vectorized)
+        self.legs_greeks = self._compute_legs_greeks()
+    
+    def _compute_legs_greeks(self) -> List[Dict]:
+        """
+        Pre-compute Greeks for each leg in ONE vectorized pass per leg.
+        
+        Returns:
+        --------
+        List[Dict] - Greeks for each leg: [
+            {'delta': array, 'gamma': array, 'theta': array, 'vega': array, 'sign': -1},
+            ...
+        ]
+        """
+        legs_greeks = []
+        
+        for leg in self.legs:
+            K = leg['K']
+            option_type = leg['type']
+            sign = leg['sign']
+            
+            # Create ONE model for this leg
+            model = BinomialModel(
+                S=self.spot_range[0],  # Initial spot (doesn't matter, we recalculate)
+                K=K,
+                r=self.r,
+                T=self.T,
+                sigma=self.sigma,
+                N=self.N
+            )
+            
+            # Calculate Greeks for ALL spots in one call
+            greeks = model.calculate_greeks(self.spot_range, option_type)
+            
+            # Store with sign information
+            legs_greeks.append({
+                'delta': greeks['delta'],
+                'gamma': greeks['gamma'],
+                'theta': greeks['theta'],
+                'vega': greeks['vega'],
+                'sign': sign,
+                'K': K,
+                'type': option_type
+            })
+        
+        return legs_greeks
+    
+    def calculate_strategy_greeks(self) -> Dict[str, np.ndarray]:
+        """
+        Combine Greeks from all legs to get strategy-level Greeks.
+        
+        Returns:
+        --------
+        Dict with keys 'delta', 'gamma', 'theta', 'vega' - each is np.ndarray
+        """
+        strategy_greeks = {
+            'delta': np.zeros_like(self.spot_range, dtype=float),
+            'gamma': np.zeros_like(self.spot_range, dtype=float),
+            'theta': np.zeros_like(self.spot_range, dtype=float),
+            'vega': np.zeros_like(self.spot_range, dtype=float)
+        }
+        
+        # Sum up all legs with their signs
+        for leg_greeks in self.legs_greeks:
+            sign = leg_greeks['sign']
+            strategy_greeks['delta'] += sign * leg_greeks['delta']
+            strategy_greeks['gamma'] += sign * leg_greeks['gamma']
+            strategy_greeks['theta'] += sign * leg_greeks['theta']
+            strategy_greeks['vega'] += sign * leg_greeks['vega']
+        
+        return strategy_greeks
+    
+    def get_greeks_at_spot(self, spot: float) -> Dict[str, float]:
+        """
+        Get current Greeks at specific spot price.
+        
+        Parameters:
+        -----------
+        spot : float
+            Current spot price
+        
+        Returns:
+        --------
+        Dict with keys 'delta', 'gamma', 'theta', 'vega' - each is float
+        """
+        # Find closest index to the spot
+        idx = int(np.argmin(np.abs(self.spot_range - spot)))
+        
+        strategy_greeks = self.calculate_strategy_greeks()
+        
+        return {
+            'delta': float(strategy_greeks['delta'][idx]),
+            'gamma': float(strategy_greeks['gamma'][idx]),
+            'theta': float(strategy_greeks['theta'][idx]),
+            'vega': float(strategy_greeks['vega'][idx])
+        }
