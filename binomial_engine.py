@@ -224,43 +224,39 @@ class BinomialModel:
         --------
         dict with 'delta', 'gamma', 'theta', 'vega' as np.ndarray
         """
-        from scipy.stats import norm
-        
         greeks = {'delta': [], 'gamma': [], 'theta': [], 'vega': []}
         
+        # Fonction pour calculer le prix selon le type d'option
+        price_func = self.price_call if option_type == "call" else self.price_put
+        
         for S in spot_range:
-            # Recalculer le prix avec la nouvelle taille de l'arbre
-            tree = self.build_tree(S)
-            option_price = self.backward_induction(tree, self.K, option_type)
+            # Prix actuel
+            current_model = BinomialModel(S, self.K, self.r, self.T, self.sigma, self.N)
+            option_price = price_func() if option_type == "call" else current_model.price_put()
             
-            # Delta: dérivée par rapport au spot
+            # Delta: dérivée par rapport au spot (bump = 1% du spot)
             bump = S * 0.01 if S > 0 else 0.01
-            tree_up = self.build_tree(S + bump)
-            option_up = self.backward_induction(tree_up, self.K, option_type)
-            tree_down = self.build_tree(S - bump)
-            option_down = self.backward_induction(tree_down, self.K, option_type)
+            
+            model_up = BinomialModel(S + bump, self.K, self.r, self.T, self.sigma, self.N)
+            option_up = model_up.price_call() if option_type == "call" else model_up.price_put()
+            
+            model_down = BinomialModel(S - bump, self.K, self.r, self.T, self.sigma, self.N)
+            option_down = model_down.price_call() if option_type == "call" else model_down.price_put()
+            
             delta = (option_up - option_down) / (2 * bump)
             
             # Gamma: dérivée seconde par rapport au spot
             gamma = (option_up - 2 * option_price + option_down) / (bump ** 2)
             
-            # Theta: dérivée par rapport au temps (décroissance temporelle)
-            # Approximation: 1 jour = 1/365 an
-            t_bump = 1/365
-            T_new = max(self.T - t_bump, 0.001)
-            tree_t = self.build_tree(S)
-            # Recalculer avec le nouveau T (simplifié)
-            theta = (option_price - option_price) / t_bump if T_new < self.T else 0
-            # Approximation plus simple pour Theta
-            theta = -0.5 * gamma * (S ** 2) * (self.sigma ** 2)  # Theta approximation
+            # Theta: approximation via Gamma (Theta ≈ -0.5 * Gamma * S² * σ²)
+            theta = -0.5 * gamma * (S ** 2) * (self.sigma ** 2)
             
-            # Vega: dérivée par rapport à la volatilité
+            # Vega: dérivée par rapport à la volatilité (bump = 1% de la volatilité)
             vol_bump = self.sigma * 0.01 if self.sigma > 0 else 0.01
-            old_sigma = self.sigma
-            self.sigma = self.sigma + vol_bump
-            tree_vol_up = self.build_tree(S)
-            option_vol_up = self.backward_induction(tree_vol_up, self.K, option_type)
-            self.sigma = old_sigma
+            
+            model_vol_up = BinomialModel(S, self.K, self.r, self.T, self.sigma + vol_bump, self.N)
+            option_vol_up = model_vol_up.price_call() if option_type == "call" else model_vol_up.price_put()
+            
             vega = (option_vol_up - option_price) / vol_bump
             
             greeks['delta'].append(delta)
