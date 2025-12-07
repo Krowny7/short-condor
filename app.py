@@ -830,10 +830,18 @@ def main():
     
     # Generate export data
     try:
+        # Prepare Greeks data for export
+        greeks_range = {
+            'delta': delta_arr,
+            'gamma': gamma_arr,
+            'theta': theta_arr,
+            'vega': vega_arr
+        }
+        
         export_data = generate_export_data(
             spot_price, K1, K2, K3, K4, interest_rate, maturity, 
             volatility, N_steps, quantity, strategy, current_greeks, 
-            greeks_range, spot_range
+            greeks_range, spot_range_greeks
         )
         
         with col_export1:
