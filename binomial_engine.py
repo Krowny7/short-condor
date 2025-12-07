@@ -232,8 +232,9 @@ class BinomialModel:
             current_model = BinomialModel(S, self.K, self.r, self.T, self.sigma, self.N)
             option_price = current_model.price_call() if option_type == "call" else current_model.price_put()
             
-            # Delta: dérivée par rapport au spot (bump = 1% du spot)
-            bump = S * 0.01 if S > 0 else 0.01
+            # Delta: dérivée par rapport au spot (bump = max(0.5, 0.5% du spot))
+            # Utiliser un bump plus grand pour meilleure précision numérique
+            bump = max(0.5, S * 0.005)  # Minimum 0.5€, sinon 0.5% du spot
             
             model_up = BinomialModel(S + bump, self.K, self.r, self.T, self.sigma, self.N)
             option_up = model_up.price_call() if option_type == "call" else model_up.price_put()
@@ -246,11 +247,16 @@ class BinomialModel:
             # Gamma: dérivée seconde par rapport au spot
             gamma = (option_up - 2 * option_price + option_down) / (bump ** 2)
             
-            # Theta: approximation via Gamma (Theta ≈ -0.5 * Gamma * S² * σ²)
-            theta = -0.5 * gamma * (S ** 2) * (self.sigma ** 2)
+            # Theta: approximation plus simple (pas besoin de Gamma ici)
+            # Changement du prix avec 1 jour de moins (1/365 an)
+            theta_bump = 1/365
+            T_new = max(self.T - theta_bump, 0.001)
+            model_theta = BinomialModel(S, self.K, self.r, T_new, self.sigma, self.N)
+            option_price_theta = model_theta.price_call() if option_type == "call" else model_theta.price_put()
+            theta = (option_price_theta - option_price) / theta_bump if T_new > 0 else 0
             
-            # Vega: dérivée par rapport à la volatilité (bump = 1% de la volatilité)
-            vol_bump = self.sigma * 0.01 if self.sigma > 0 else 0.01
+            # Vega: dérivée par rapport à la volatilité (bump = 0.5% de la volatilité)
+            vol_bump = max(0.001, self.sigma * 0.005)  # Minimum 0.001, sinon 0.5% de sigma
             
             model_vol_up = BinomialModel(S, self.K, self.r, self.T, self.sigma + vol_bump, self.N)
             option_vol_up = model_vol_up.price_call() if option_type == "call" else model_vol_up.price_put()
