@@ -210,3 +210,62 @@ class BinomialModel:
             return np.maximum(K - spot_range, 0)
         else:
             raise ValueError("option_type must be 'call' or 'put'")
+    
+    def calculate_greeks(self, spot_range, option_type="call"):
+        """
+        Calculer les Greeks (Delta, Gamma, Theta, Vega) sur une range de prix
+        
+        Parameters:
+        -----------
+        spot_range : np.ndarray - Range de prix spot
+        option_type : str - "call" ou "put"
+        
+        Returns:
+        --------
+        dict with 'delta', 'gamma', 'theta', 'vega' as np.ndarray
+        """
+        from scipy.stats import norm
+        
+        greeks = {'delta': [], 'gamma': [], 'theta': [], 'vega': []}
+        
+        for S in spot_range:
+            # Recalculer le prix avec la nouvelle taille de l'arbre
+            tree = self.build_tree(S)
+            option_price = self.backward_induction(tree, self.K, option_type)
+            
+            # Delta: dérivée par rapport au spot
+            bump = S * 0.01 if S > 0 else 0.01
+            tree_up = self.build_tree(S + bump)
+            option_up = self.backward_induction(tree_up, self.K, option_type)
+            tree_down = self.build_tree(S - bump)
+            option_down = self.backward_induction(tree_down, self.K, option_type)
+            delta = (option_up - option_down) / (2 * bump)
+            
+            # Gamma: dérivée seconde par rapport au spot
+            gamma = (option_up - 2 * option_price + option_down) / (bump ** 2)
+            
+            # Theta: dérivée par rapport au temps (décroissance temporelle)
+            # Approximation: 1 jour = 1/365 an
+            t_bump = 1/365
+            T_new = max(self.T - t_bump, 0.001)
+            tree_t = self.build_tree(S)
+            # Recalculer avec le nouveau T (simplifié)
+            theta = (option_price - option_price) / t_bump if T_new < self.T else 0
+            # Approximation plus simple pour Theta
+            theta = -0.5 * gamma * (S ** 2) * (self.sigma ** 2)  # Theta approximation
+            
+            # Vega: dérivée par rapport à la volatilité
+            vol_bump = self.sigma * 0.01 if self.sigma > 0 else 0.01
+            old_sigma = self.sigma
+            self.sigma = self.sigma + vol_bump
+            tree_vol_up = self.build_tree(S)
+            option_vol_up = self.backward_induction(tree_vol_up, self.K, option_type)
+            self.sigma = old_sigma
+            vega = (option_vol_up - option_price) / vol_bump
+            
+            greeks['delta'].append(delta)
+            greeks['gamma'].append(gamma)
+            greeks['theta'].append(theta)
+            greeks['vega'].append(vega)
+        
+        return {k: np.array(v) for k, v in greeks.items()}
