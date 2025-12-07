@@ -632,39 +632,44 @@ def main():
         )
         
         st.divider()
-        st.subheader("🔧 Prix des Options Individuelles")
+        st.subheader("🔧 Individual Option Prices")
+        
+        # Calculate individual option prices
+        from strategy_manager import BlackScholesGreeks
+        
+        call_K1 = BlackScholesGreeks.call_price(spot_price, K1, rate_decimal, maturity, vol_decimal)
+        put_K2 = BlackScholesGreeks.put_price(spot_price, K2, rate_decimal, maturity, vol_decimal)
+        call_K3 = BlackScholesGreeks.call_price(spot_price, K3, rate_decimal, maturity, vol_decimal)
+        call_K4 = BlackScholesGreeks.call_price(spot_price, K4, rate_decimal, maturity, vol_decimal)
         
         options_df = pd.DataFrame({
-            "Strike": [f"K1 (€{K1:.2f})", f"K2 (€{K2:.2f})", f"K3 (€{K3:.2f})", f"K4 (€{K4:.2f})"],
-            "Type": ["VENDRE", "ACHETER", "ACHETER", "VENDRE"],
-            "Prix (€)": [
-                f"{details['option_prices']['call_K1']:.2f}",
-                f"{details['option_prices']['call_K2']:.2f}",
-                f"{details['option_prices']['call_K3']:.2f}",
-                f"{details['option_prices']['call_K4']:.2f}"
-            ]
+            "Leg": ["K1 (€" + f"{K1:.2f}" + ")", "K2 (€" + f"{K2:.2f}" + ")", 
+                    "K3 (€" + f"{K3:.2f}" + ")", "K4 (€" + f"{K4:.2f}" + ")"],
+            "Type": ["Call", "Put", "Call", "Call"],
+            "Position": ["LONG", "SHORT", "SHORT", "LONG"],
+            "Price (€)": [f"{call_K1:.2f}", f"{put_K2:.2f}", f"{call_K3:.2f}", f"{call_K4:.2f}"]
         })
         
         st.dataframe(options_df, use_container_width=True, hide_index=True)
     
     with col3:
-        st.subheader("📋 Résumé de la Stratégie")
+        st.subheader("📋 Strategy Summary")
         
         summary_data = {
-            "Paramètre": [
-                "Prix Spot",
-                "Volatilité",
-                "Taux d'Intérêt",
-                "Temps d'Expiration",
-                "Étapes Binomiales",
+            "Parameter": [
+                "Spot Price",
+                "Volatility",
+                "Interest Rate",
+                "Time to Expiration",
+                "Binomial Steps",
                 "Capital",
-                "Stratégies à Exécuter"
+                "Max Contracts"
             ],
-            "Valeur": [
+            "Value": [
                 f"€{spot_price:.2f}",
                 f"{volatility}%",
                 f"{interest_rate}%",
-                f"{maturity:.2f} ans",
+                f"{maturity:.4f} years",
                 f"{N_steps}",
                 f"€{capital:.2f}",
                 f"{quantity}x"
@@ -676,24 +681,26 @@ def main():
         
         st.divider()
         
-        # Afficher la source des données
-        if mode == "Mode Réel (Données de Marché)":
-            st.info(f"📊 **Source:** Yahoo Finance | Mis à jour: {summary['date']}")
-        
-        st.subheader("📌 Logique de la Stratégie")
+        st.subheader("📌 Iron Condor Logic")
         
         st.markdown("""
-        **Configuration Short Condor:**
-        - **VENDRE** Call @ K1 (Crédit)
-        - **ACHETER** Call @ K2 (Débit)
-        - **ACHETER** Call @ K3 (Débit)
-        - **VENDRE** Call @ K4 (Crédit)
+        **Short Iron Condor (Credit Strategy):**
         
-        **Profit quand:** L'action reste entre K2-K3
+        **Long Positions (Protection):**
+        - **Long Put @ K1** - Downside protection
+        - **Long Call @ K4** - Upside protection
         
-        **Perte quand:** L'action se déplace au-delà de K1 ou K4
+        **Short Positions (Income):**
+        - **Short Put @ K2** - Collect premium
+        - **Short Call @ K3** - Collect premium
         
-        **Utilisation:** Quand une haute volatilité est attendue
+        **Profit Zone:** When stock stays between K2 and K3
+        
+        **Max Loss:** Limited to (K2-K1) or (K4-K3), whichever occurs
+        
+        **Best Case:** All options expire worthless (max profit = net credit)
+        
+        **Type:** Credit spread with defined risk
         """)
     
     # ======================== SECTION GRAPHIQUES ========================
