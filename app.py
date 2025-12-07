@@ -484,178 +484,144 @@ def main():
     st.divider()
     st.header("📈 Évolution des Greeks")
     st.markdown("*Comprendre comment les risques changent avec le prix de l'action*")
-    st.info("🔧 Les Greeks sont en cours de recalcul pour une meilleure précision. Réessayez dans quelques instants!")
     
-    # TODO: Fix Greeks calculation - currently disabled
-    """ 
-    # Créer une range de prix pour les Greeks
+    try:
+        # Créer une range de prix pour les Greeks
+        spot_range_greeks = np.linspace(spot_price * 0.7, spot_price * 1.3, 30)
         spot_range_greeks = np.linspace(spot_price * 0.7, spot_price * 1.3, 50)
         
         # Calculer les Greeks pour la stratégie Short Condor
-        # On va calculer les Greeks pour chaque leg et les combiner
+        # Simple et transparent: 4 graphiques séparés
         
-        delta_condor = []
-        gamma_condor = []
-        theta_condor = []
-        vega_condor = []
+        delta_list = []
+        gamma_list = []
+        theta_list = []
+        vega_list = []
         
         for S in spot_range_greeks:
-            # Créer un model temporaire pour ce spot
-            model = BinomialModel(
-                S=S, K=K1, T=maturity, r=interest_rate, 
-                sigma=volatility, N=N_steps
-            )
-            
             # Calculer les Greeks pour chaque leg
-            greeks_k1_call = model.calculate_greeks(np.array([S]), 'call')
+            model_k1 = BinomialModel(S=S, K=K1, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
+            g_k1 = model_k1.calculate_greeks(np.array([S]), 'call')
             
-            model_k2 = BinomialModel(S=S, K=K2, T=maturity, r=interest_rate, 
-                                     sigma=volatility, N=N_steps)
-            greeks_k2_call = model_k2.calculate_greeks(np.array([S]), 'call')
+            model_k2 = BinomialModel(S=S, K=K2, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
+            g_k2 = model_k2.calculate_greeks(np.array([S]), 'call')
             
-            model_k3 = BinomialModel(S=S, K=K3, T=maturity, r=interest_rate, 
-                                     sigma=volatility, N=N_steps)
-            greeks_k3_put = model_k3.calculate_greeks(np.array([S]), 'put')
+            model_k3 = BinomialModel(S=S, K=K3, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
+            g_k3 = model_k3.calculate_greeks(np.array([S]), 'put')
             
-            model_k4 = BinomialModel(S=S, K=K4, T=maturity, r=interest_rate, 
-                                     sigma=volatility, N=N_steps)
-            greeks_k4_put = model_k4.calculate_greeks(np.array([S]), 'put')
+            model_k4 = BinomialModel(S=S, K=K4, T=maturity, r=interest_rate, sigma=volatility, N=N_steps)
+            g_k4 = model_k4.calculate_greeks(np.array([S]), 'put')
             
-            # Short Condor: Vendre K1 Call, Acheter K2 Call, Acheter K3 Put, Vendre K4 Put
-            delta = -greeks_k1_call['delta'][0] + greeks_k2_call['delta'][0] + greeks_k3_put['delta'][0] - greeks_k4_put['delta'][0]
-            gamma = -greeks_k1_call['gamma'][0] + greeks_k2_call['gamma'][0] + greeks_k3_put['gamma'][0] - greeks_k4_put['gamma'][0]
-            theta = -greeks_k1_call['theta'][0] + greeks_k2_call['theta'][0] + greeks_k3_put['theta'][0] - greeks_k4_put['theta'][0]
-            vega = -greeks_k1_call['vega'][0] + greeks_k2_call['vega'][0] + greeks_k3_put['vega'][0] - greeks_k4_put['vega'][0]
+            # Short Condor: -K1 +K2 +K3 -K4
+            delta = -g_k1['delta'][0] + g_k2['delta'][0] + g_k3['delta'][0] - g_k4['delta'][0]
+            gamma = -g_k1['gamma'][0] + g_k2['gamma'][0] + g_k3['gamma'][0] - g_k4['gamma'][0]
+            theta = -g_k1['theta'][0] + g_k2['theta'][0] + g_k3['theta'][0] - g_k4['theta'][0]
+            vega = -g_k1['vega'][0] + g_k2['vega'][0] + g_k3['vega'][0] - g_k4['vega'][0]
             
-            delta_condor.append(delta)
-            gamma_condor.append(gamma)
-            theta_condor.append(theta)
-            vega_condor.append(vega)
+            delta_list.append(float(delta))
+            gamma_list.append(float(gamma))
+            theta_list.append(float(theta))
+            vega_list.append(float(vega))
         
-        # Convertir en numpy arrays
-        delta_condor = np.array(delta_condor)
-        gamma_condor = np.array(gamma_condor)
-        theta_condor = np.array(theta_condor)
-        vega_condor = np.array(vega_condor)
+        # Convertir en arrays
+        delta_arr = np.array(delta_list)
+        gamma_arr = np.array(gamma_list)
+        theta_arr = np.array(theta_list)
+        vega_arr = np.array(vega_list)
         
-        # Debug: Vérifier les valeurs
-        print(f"DEBUG: delta_condor length = {len(delta_condor)}")
-        print(f"DEBUG: delta_condor[0] = {delta_condor[0]}")
-        print(f"DEBUG: delta_condor min/max = {np.min(delta_condor)} / {np.max(delta_condor)}")
-        print(f"DEBUG: vega_condor min/max = {np.min(vega_condor)} / {np.max(vega_condor)}")
+        # 4 graphiques séparés - un pour chaque Greek
+        col1, col2 = st.columns(2)
         
-        # Créer le graphique Plotly interactif
-        fig_greeks = go.Figure()
-        
-        # Ajouter les courbes des Greeks
-        fig_greeks.add_trace(go.Scatter(
-            x=spot_range_greeks, y=delta_condor,
-            mode='lines', name='Delta (Δ)',
-            line=dict(color='#007AFF', width=3),
-            hovertemplate='<b>Prix: €%{x:.2f}</b><br>Delta: %{y:.4f}<extra></extra>'
-        ))
-        
-        fig_greeks.add_trace(go.Scatter(
-            x=spot_range_greeks, y=gamma_condor,
-            mode='lines', name='Gamma (Γ)',
-            line=dict(color='#34C759', width=3),
-            hovertemplate='<b>Prix: €%{x:.2f}</b><br>Gamma: %{y:.4f}<extra></extra>'
-        ))
-        
-        fig_greeks.add_trace(go.Scatter(
-            x=spot_range_greeks, y=theta_condor,
-            mode='lines', name='Theta (Θ)',
-            line=dict(color='#FF9500', width=3),
-            hovertemplate='<b>Prix: €%{x:.2f}</b><br>Theta: %{y:.4f}<extra></extra>'
-        ))
-        
-        fig_greeks.add_trace(go.Scatter(
-            x=spot_range_greeks, y=vega_condor,
-            mode='lines', name='Vega (ν)',
-            line=dict(color='#FF3B30', width=3),
-            hovertemplate='<b>Prix: €%{x:.2f}</b><br>Vega: %{y:.4f}<extra></extra>'
-        ))
-        
-        # Ajouter une ligne pour le prix spot actuel
-        fig_greeks.add_vline(x=spot_price, line_dash="dash", line_color="gray", 
-                            annotation_text="Prix Actuel", annotation_position="top right")
-        
-        # Ajouter les zones de strike
-        for strike, color, name in [(K1, "#FF3B30", "K1 (Vendre)"), 
-                                     (K2, "#FF9500", "K2 (Acheter)"),
-                                     (K3, "#FF9500", "K3 (Acheter)"),
-                                     (K4, "#FF3B30", "K4 (Vendre)")]:
-            fig_greeks.add_vline(x=strike, line_dash="dot", line_color=color, opacity=0.3,
-                                annotation_text=name, annotation_position="bottom right")
-        
-        # Configurer le layout
-        fig_greeks.update_layout(
-            title="Évolution des Greeks Short Condor",
-            xaxis_title="Prix de l'Action à l'Expiration (€)",
-            yaxis_title="Valeur du Greek",
-            hovermode='x unified',
-            height=500,
-            template='plotly_white',
-            font=dict(size=12, color='#1a1a1a'),
-            plot_bgcolor='rgba(245, 245, 247, 0.5)',
-            paper_bgcolor='white',
-            showlegend=True,
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=0.99,
-                xanchor="right",
-                x=0.99,
-                bgcolor="rgba(255, 255, 255, 0.95)",
-                bordercolor="rgba(0, 0, 0, 0.3)",
-                borderwidth=1,
-                font=dict(size=12, color='#1a1a1a')
+        # DELTA
+        with col1:
+            st.subheader("Delta (Δ) - Sensibilité au Spot")
+            fig_delta = go.Figure()
+            fig_delta.add_trace(go.Scatter(
+                x=spot_range_greeks, y=delta_arr,
+                mode='lines', fill='tozeroy',
+                name='Delta',
+                line=dict(color='#007AFF', width=2),
+                fillcolor='rgba(0, 122, 255, 0.2)'
+            ))
+            fig_delta.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
+            fig_delta.update_layout(
+                height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
+                xaxis_title="Prix Spot (€)", yaxis_title="Delta"
             )
-        )
+            st.plotly_chart(fig_delta, use_container_width=True)
         
-        st.plotly_chart(fig_greeks, use_container_width=True)
+        # GAMMA
+        with col2:
+            st.subheader("Gamma (Γ) - Accélération")
+            fig_gamma = go.Figure()
+            fig_gamma.add_trace(go.Scatter(
+                x=spot_range_greeks, y=gamma_arr,
+                mode='lines', fill='tozeroy',
+                name='Gamma',
+                line=dict(color='#34C759', width=2),
+                fillcolor='rgba(52, 199, 89, 0.2)'
+            ))
+            fig_gamma.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
+            fig_gamma.update_layout(
+                height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
+                xaxis_title="Prix Spot (€)", yaxis_title="Gamma"
+            )
+            st.plotly_chart(fig_gamma, use_container_width=True)
         
-        # Afficher les données brutes pour vérifier
-        with st.expander("🔧 Données brutes des Greeks (Debug)"):
-            col_debug1, col_debug2 = st.columns(2)
-            with col_debug1:
-                st.write("**Premières valeurs:**")
-                st.write(f"Delta: {delta_condor[:5]}")
-                st.write(f"Gamma: {gamma_condor[:5]}")
-            with col_debug2:
-                st.write("**Dernières valeurs:**")
-                st.write(f"Delta: {delta_condor[-5:]}")
-                st.write(f"Gamma: {gamma_condor[-5:]}")
+        # THETA
+        with col1:
+            st.subheader("Theta (Θ) - Décroissance Temporelle")
+            fig_theta = go.Figure()
+            fig_theta.add_trace(go.Scatter(
+                x=spot_range_greeks, y=theta_arr,
+                mode='lines', fill='tozeroy',
+                name='Theta',
+                line=dict(color='#FF9500', width=2),
+                fillcolor='rgba(255, 149, 0, 0.2)'
+            ))
+            fig_theta.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
+            fig_theta.update_layout(
+                height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
+                xaxis_title="Prix Spot (€)", yaxis_title="Theta (€/jour)"
+            )
+            st.plotly_chart(fig_theta, use_container_width=True)
         
+        # VEGA
+        with col2:
+            st.subheader("Vega (ν) - Sensibilité Volatilité")
+            fig_vega = go.Figure()
+            fig_vega.add_trace(go.Scatter(
+                x=spot_range_greeks, y=vega_arr,
+                mode='lines', fill='tozeroy',
+                name='Vega',
+                line=dict(color='#FF3B30', width=2),
+                fillcolor='rgba(255, 59, 48, 0.2)'
+            ))
+            fig_vega.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
+            fig_vega.update_layout(
+                height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
+                xaxis_title="Prix Spot (€)", yaxis_title="Vega"
+            )
+            st.plotly_chart(fig_vega, use_container_width=True)
         
-        # Ajouter une explication des Greeks
-        with st.expander("📚 Comprendre les Greeks"):
-            # Trouver l'index du spot le plus proche
-            closest_idx = int(np.argmin(np.abs(spot_range_greeks - spot_price)))
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.markdown("**Delta (Δ)**")
-                st.markdown("Combien l'option change vs l'action. Entre -1 et +1.")
-                st.metric("Valeur actuelle", f"{delta_condor[closest_idx]:.4f}")
-            
-            with col2:
-                st.markdown("**Gamma (Γ)**")
-                st.markdown("Rapidité du changement du Delta. Plus élevé = plus risqué.")
-                st.metric("Valeur actuelle", f"{gamma_condor[closest_idx]:.4f}")
-            
-            with col3:
-                st.markdown("**Theta (Θ)**")
-                st.markdown("Gain/Perte par jour (time decay). Positif = gagne avec le temps.")
-                st.metric("€/jour", f"{theta_condor[closest_idx]:.4f}")
-            
-            with col4:
-                st.markdown("**Vega (ν)**")
-                st.markdown("Sensibilité à la volatilité. Positif = gagne si vol monte.")
-                st.metric("Valeur actuelle", f"{vega_condor[closest_idx]:.4f}")
+        # Afficher les valeurs actuelles
+        st.divider()
+        closest_idx = int(np.argmin(np.abs(spot_range_greeks - spot_price)))
+        
+        col_vals1, col_vals2, col_vals3, col_vals4 = st.columns(4)
+        with col_vals1:
+            st.metric("Delta", f"{delta_arr[closest_idx]:.6f}")
+        with col_vals2:
+            st.metric("Gamma", f"{gamma_arr[closest_idx]:.6f}")
+        with col_vals3:
+            st.metric("Theta", f"{theta_arr[closest_idx]:.6f}")
+        with col_vals4:
+            st.metric("Vega", f"{vega_arr[closest_idx]:.6f}")
     
-    """  # End of commented Greeks section
+    except Exception as e:
+        st.error(f"❌ Erreur dans les Greeks: {str(e)}")
+        import traceback
+        st.write(traceback.format_exc())
     
     # ======================== TABLE D'ANALYSE P&L ========================
     st.divider()
