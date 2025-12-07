@@ -492,10 +492,10 @@ def main():
         # Calculer les Greeks pour la stratégie Short Condor
         # On va calculer les Greeks pour chaque leg et les combiner
         
-        delta_condor = np.array([])
-        gamma_condor = np.array([])
-        theta_condor = np.array([])
-        vega_condor = np.array([])
+        delta_condor = []
+        gamma_condor = []
+        theta_condor = []
+        vega_condor = []
         
         for S in spot_range_greeks:
             # Créer un model temporaire pour ce spot
@@ -525,15 +525,22 @@ def main():
             theta = -greeks_k1_call['theta'][0] + greeks_k2_call['theta'][0] + greeks_k3_put['theta'][0] - greeks_k4_put['theta'][0]
             vega = -greeks_k1_call['vega'][0] + greeks_k2_call['vega'][0] + greeks_k3_put['vega'][0] - greeks_k4_put['vega'][0]
             
-            delta_condor = np.append(delta_condor, delta)
-            gamma_condor = np.append(gamma_condor, gamma)
-            theta_condor = np.append(theta_condor, theta)
-            vega_condor = np.append(vega_condor, vega)
+            delta_condor.append(delta)
+            gamma_condor.append(gamma)
+            theta_condor.append(theta)
+            vega_condor.append(vega)
+        
+        # Convertir en numpy arrays
+        delta_condor = np.array(delta_condor)
+        gamma_condor = np.array(gamma_condor)
+        theta_condor = np.array(theta_condor)
+        vega_condor = np.array(vega_condor)
         
         # Debug: Vérifier les valeurs
         print(f"DEBUG: delta_condor length = {len(delta_condor)}")
         print(f"DEBUG: delta_condor[0] = {delta_condor[0]}")
         print(f"DEBUG: delta_condor min/max = {np.min(delta_condor)} / {np.max(delta_condor)}")
+        print(f"DEBUG: vega_condor min/max = {np.min(vega_condor)} / {np.max(vega_condor)}")
         
         # Créer le graphique Plotly interactif
         fig_greeks = go.Figure()
