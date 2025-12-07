@@ -501,22 +501,22 @@ def main():
             # Créer un model temporaire pour ce spot
             model = BinomialModel(
                 S=S, K=K1, T=maturity, r=interest_rate, 
-                sigma=volatility, N=N_steps, option_type='call'
+                sigma=volatility, N=N_steps
             )
             
             # Calculer les Greeks pour chaque leg
             greeks_k1_call = model.calculate_greeks(np.array([S]), 'call')
             
             model_k2 = BinomialModel(S=S, K=K2, T=maturity, r=interest_rate, 
-                                     sigma=volatility, N=N_steps, option_type='call')
+                                     sigma=volatility, N=N_steps)
             greeks_k2_call = model_k2.calculate_greeks(np.array([S]), 'call')
             
             model_k3 = BinomialModel(S=S, K=K3, T=maturity, r=interest_rate, 
-                                     sigma=volatility, N=N_steps, option_type='put')
+                                     sigma=volatility, N=N_steps)
             greeks_k3_put = model_k3.calculate_greeks(np.array([S]), 'put')
             
             model_k4 = BinomialModel(S=S, K=K4, T=maturity, r=interest_rate, 
-                                     sigma=volatility, N=N_steps, option_type='put')
+                                     sigma=volatility, N=N_steps)
             greeks_k4_put = model_k4.calculate_greeks(np.array([S]), 'put')
             
             # Short Condor: Vendre K1 Call, Acheter K2 Call, Acheter K3 Put, Vendre K4 Put
