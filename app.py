@@ -831,8 +831,8 @@ def main():
     # Generate export data
     try:
         export_data = generate_export_data(
-            spot_price, K1, K2, K3, K4, rate, expiration_years, 
-            volatility, num_steps, quantity, strategy, current_greeks, 
+            spot_price, K1, K2, K3, K4, interest_rate, maturity, 
+            volatility, N_steps, quantity, strategy, current_greeks, 
             greeks_range, spot_range
         )
         
