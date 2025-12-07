@@ -19,7 +19,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from binomial_engine import BinomialModel, MultiLegGreeksCalculator
-from strategy_manager import ShortCondor, StrategyParams, StrategyExecutor
+from strategy_manager import Condor, StrategyParams, StrategyExecutor, StrategyType
 from market_data import MarketDataProvider, AVAILABLE_STOCKS
 
 
@@ -322,9 +322,26 @@ def export_to_pdf(export_data, strategy, spot_price, K1, K2, K3, K4, quantity, c
 
 
 def main():
-    st.title("📈 Short Condor Strategy Analyzer")
+    st.title("📈 Condor Strategy Analyzer")
     st.markdown("**Valuation Tool for Volatility-Based Options Strategies**")
     st.markdown("Binomial Model (Cox-Ross-Rubinstein) for European Options")
+    
+    # ======================== STRATEGY SELECTION ========================
+    strategy_choice = st.radio(
+        "📊 Choose Strategy Type",
+        [StrategyType.CALL_CONDOR.value, StrategyType.IRON_CONDOR.value],
+        horizontal=True,
+        help="Call Condor: 4 Calls | Iron Condor: 2 Puts + 2 Calls"
+    )
+    strategy_type = StrategyType.CALL_CONDOR if strategy_choice == StrategyType.CALL_CONDOR.value else StrategyType.IRON_CONDOR
+    
+    # Display strategy info
+    if strategy_type == StrategyType.CALL_CONDOR:
+        st.info("🔹 **Call Condor** (4 Calls): SELL Call K1 → BUY Call K2 → BUY Call K3 → SELL Call K4")
+    else:
+        st.info("🔹 **Iron Condor** (2 Puts + 2 Calls): SELL Put K1 → BUY Put K2 → BUY Call K3 → SELL Call K4")
+    
+    st.markdown("---")
     
     # ======================== CHOIX DU MODE ========================
     mode = st.radio(
@@ -500,10 +517,11 @@ def main():
             r=rate_decimal,
             T=maturity,
             sigma=vol_decimal,
-            N=N_steps
+            N=N_steps,
+            strategy_type=strategy_type
         )
         
-        strategy = ShortCondor(params)
+        strategy = Condor(params)
         executor = StrategyExecutor(capital)
         details = strategy.get_strategy_details()
         
