@@ -227,13 +227,10 @@ class BinomialModel:
         """
         greeks = {'delta': [], 'gamma': [], 'theta': [], 'vega': []}
         
-        # Fonction pour calculer le prix selon le type d'option
-        price_func = self.price_call if option_type == "call" else self.price_put
-        
         for S in spot_range:
-            # Prix actuel
+            # Prix actuel - utiliser le bon modèle avec ce spot
             current_model = BinomialModel(S, self.K, self.r, self.T, self.sigma, self.N)
-            option_price = price_func() if option_type == "call" else current_model.price_put()
+            option_price = current_model.price_call() if option_type == "call" else current_model.price_put()
             
             # Delta: dérivée par rapport au spot (bump = 1% du spot)
             bump = S * 0.01 if S > 0 else 0.01
