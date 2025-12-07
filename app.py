@@ -382,58 +382,61 @@ def main():
             maturity = st.slider("Délai d'Expiration (années)", min_value=0.01, max_value=2.0, value=0.25, step=0.01)
             
             st.divider()
-            st.subheader("⚡ Strikes (€)")
-            st.info(f"💡 Current Price: €{spot_price:.2f} | Volatility: {volatility:.1f}%")
+            st.subheader("⚡ Iron Condor Strikes (€)")
+            st.info(
+                f"📍 Current Price: €{spot_price:.2f}\n\n"
+                f"**Structure:** K1 (Long Put) < K2 (Short Put) < S < K3 (Short Call) < K4 (Long Call)"
+            )
             
             # Propose suggested strikes
-            suggest_strikes = st.checkbox("💡 Get Suggested Strikes", value=True)
+            suggest_strikes = st.checkbox("💡 Get Suggested Strikes (±5% and ±10%)", value=True)
             
             if suggest_strikes:
-                # Calculate suggested strikes (±10% and ±15% of price)
-                suggested_k1 = spot_price * 0.85
-                suggested_k2 = spot_price * 0.9
-                suggested_k3 = spot_price * 1.1
-                suggested_k4 = spot_price * 1.15
+                # Calculate suggested strikes for iron condor
+                suggested_k1 = spot_price * 0.90  # Long put (5% OTM)
+                suggested_k2 = spot_price * 0.95  # Short put (5% OTM)
+                suggested_k3 = spot_price * 1.05  # Short call (5% OTM)
+                suggested_k4 = spot_price * 1.10  # Long call (10% OTM)
                 
                 col1, col2 = st.columns(2)
                 with col1:
                     K1 = st.number_input(
-                        "K1 - Short Call (Lowest)",
+                        "K1 - Long Put (Lowest Strike)",
                         min_value=10.0,
                         value=suggested_k1,
                         step=1.0,
-                        help=f"Suggested: €{suggested_k1:.2f}"
+                        help=f"Protection put | Suggested: €{suggested_k1:.2f}"
                     )
                     K3 = st.number_input(
-                        "K3 - Long Call",
+                        "K3 - Short Call (High Strike)",
                         min_value=10.0,
                         value=suggested_k3,
                         step=1.0,
-                        help=f"Suggested: €{suggested_k3:.2f}"
+                        help=f"Income call | Suggested: €{suggested_k3:.2f}"
                     )
                 with col2:
                     K2 = st.number_input(
-                        "K2 - Long Call",
+                        "K2 - Short Put (Low-Mid Strike)",
                         min_value=10.0,
                         value=suggested_k2,
                         step=1.0,
-                        help=f"Suggested: €{suggested_k2:.2f}"
+                        help=f"Income put | Suggested: €{suggested_k2:.2f}"
                     )
                     K4 = st.number_input(
-                        "K4 - Short Call (Highest)",
+                        "K4 - Long Call (Highest Strike)",
                         min_value=10.0,
                         value=suggested_k4,
                         step=1.0,
-                        help=f"Suggested: €{suggested_k4:.2f}"
+                        help=f"Protection call | Suggested: €{suggested_k4:.2f}"
                     )
             else:
                 col1, col2 = st.columns(2)
                 with col1:
-                    K1 = st.number_input("K1 - Short Call (Lowest)", min_value=10.0, value=90.0, step=1.0)
-                    K3 = st.number_input("K3 - Long Call", min_value=10.0, value=110.0, step=1.0)
+                    K1 = st.number_input("K1 - Long Put (Lowest)", min_value=10.0, value=90.0, step=1.0)
+                    K3 = st.number_input("K3 - Short Call (High)", min_value=10.0, value=105.0, step=1.0)
                 with col2:
-                    K2 = st.number_input("K2 - Long Call", min_value=10.0, value=95.0, step=1.0)
-                    K4 = st.number_input("K4 - Short Call (Highest)", min_value=10.0, value=115.0, step=1.0)
+                    K2 = st.number_input("K2 - Short Put (Low-Mid)", min_value=10.0, value=95.0, step=1.0)
+                    K4 = st.number_input("K4 - Long Call (Highest)", min_value=10.0, value=110.0, step=1.0)
             
             st.divider()
             st.subheader("💰 Capital Management")
@@ -504,9 +507,37 @@ def main():
         executor = StrategyExecutor(capital)
         details = strategy.get_strategy_details()
         
-    except Exception as e:
-        st.error(f"Strategy creation error: {str(e)}")
+        # Validate Greeks numerically
+        greeks_validation = strategy.validate_greeks_numerically(spot_price)
+        
+    except ValueError as e:
+        st.error(f"❌ Strategy Configuration Error:\n{str(e)}")
         st.stop()
+    except Exception as e:
+        st.error(f"❌ Unexpected error: {str(e)}")
+        import traceback
+        st.write(traceback.format_exc())
+        st.stop()
+    
+    # Display validation warning if needed
+    if not greeks_validation['validation_passed']:
+        st.warning(
+            f"⚠️ Greeks Validation Warning:\n"
+            f"Max numerical error: {greeks_validation['max_error']:.6f}\n"
+            f"This may indicate numerical precision issues. Use higher N_steps for better accuracy."
+        )
+    
+    # Display strategy legs clearly
+    st.info("📊 **Iron Condor Structure**")
+    legs_data = []
+    for leg in details['legs']:
+        legs_data.append({
+            'Option': f"{leg['type'].upper()} {leg['strike']:.2f}",
+            'Position': leg['position'],
+            'Role': 'Protection' if (leg['type'] == 'put' and leg['position'] == 'LONG') or (leg['type'] == 'call' and leg['position'] == 'LONG') else 'Income'
+        })
+    legs_df = pd.DataFrame(legs_data)
+    st.dataframe(legs_df, use_container_width=True, hide_index=True)
     
     # ======================== MAIN CONTENT: 3-COLUMN LAYOUT ========================
     
@@ -516,70 +547,69 @@ def main():
     with col1:
         st.subheader("💰 Strategy Valuation")
         
-        net_cost = details["strategy_metrics"]["net_cost"]
-        credit = details["strategy_metrics"]["net_credit"]
+        net_cost = details["net_cost"]
         
-        if credit > 0:
+        if net_cost < 0:  # Credit strategy
             st.metric(
                 "Net Credit Received",
-                f"€{credit:.2f}",
+                f"€{-net_cost:.2f}",
                 delta=f"Per 100 shares",
                 delta_color="normal"
             )
-            st.success(f"✓ Stratégie de Crédit (Risque Réduit)")
+            st.success(f"✓ Credit Strategy (Premium Received)")
         else:
             st.metric(
-                "Débit Net Payé",
-                f"€{-net_cost:.2f}",
-                delta=f"Par 100 parts",
+                "Net Debit Paid",
+                f"€{net_cost:.2f}",
+                delta=f"Per 100 shares",
                 delta_color="off"
             )
+            st.info(f"Debit Strategy (Premium Paid)")
         
         st.divider()
-        st.subheader("📊 Scénarios Extrêmes")
+        st.subheader("📊 Extreme Scenarios")
         
-        max_profit = details["strategy_metrics"]["max_profit"]
-        max_loss = details["strategy_metrics"]["max_loss"]
+        max_profit = details["max_profit"]
+        max_loss = details["max_loss"]
         
         col_profit, col_loss = st.columns(2)
         with col_profit:
             st.metric(
-                "Profit Maximum",
+                "Maximum Profit",
                 f"€{max_profit:.2f}",
-                delta="Par contrat",
+                delta="Per contract",
                 delta_color="normal"
             )
         with col_loss:
             st.metric(
-                "Perte Maximum",
-                f"€{max_loss:.2f}",
-                delta="Par contrat",
+                "Maximum Loss",
+                f"€{abs(max_loss):.2f}",
+                delta="Per contract",
                 delta_color="off"
             )
         
         st.divider()
-        st.subheader("🎯 Points d'Équilibre")
+        st.subheader("🎯 Breakeven Points")
         
-        lower_be, upper_be = details["strategy_metrics"]["lower_breakeven"], details["strategy_metrics"]["upper_breakeven"]
-        
-        st.write(f"**Équilibre Bas:** €{lower_be:.2f}")
-        st.write(f"**Équilibre Haut:** €{upper_be:.2f}")
-        
-        profit_zone_lower = details["strategy_metrics"]["profit_zone_lower"]
-        profit_zone_upper = details["strategy_metrics"]["profit_zone_upper"]
-        
-        st.write(f"\n**Zone de Profit:** €{profit_zone_lower:.2f} - €{profit_zone_upper:.2f}")
+        if len(details["breakeven_points"]) >= 2:
+            lower_be = details["breakeven_points"][0]
+            upper_be = details["breakeven_points"][-1]
+            st.write(f"**Lower Breakeven:** €{lower_be:.2f}")
+            st.write(f"**Upper Breakeven:** €{upper_be:.2f}")
+            st.write(f"**Profit Zone:** €{K2:.2f} - €{K3:.2f}")
+        else:
+            st.write("Breakeven points cannot be calculated (check parameters)")
     
     with col2:
-        st.subheader("📈 Gestion du Capital")
+        st.subheader("📈 Capital Management")
         
         quantity = executor.max_quantity(strategy)
         execution = executor.get_execution_summary(strategy, quantity)
         
         st.metric(
-            "Stratégies Max",
+            "Max Strategies",
             f"{quantity}x",
-            delta=f"Avec €{capital:.0f} de capital",
+            delta=f"With €{capital:.0f} capital",
             delta_color="normal"
         )
         
