@@ -582,7 +582,7 @@ def main():
             hovermode='x unified',
             height=500,
             template='plotly_white',
-            font=dict(size=12),
+            font=dict(size=12, color='#1a1a1a'),
             plot_bgcolor='rgba(245, 245, 247, 0.5)',
             paper_bgcolor='white',
             showlegend=True,
@@ -592,9 +592,10 @@ def main():
                 y=0.99,
                 xanchor="right",
                 x=0.99,
-                bgcolor="rgba(255, 255, 255, 0.8)",
-                bordercolor="rgba(0, 0, 0, 0.2)",
-                borderwidth=1
+                bgcolor="rgba(255, 255, 255, 0.95)",
+                bordercolor="rgba(0, 0, 0, 0.3)",
+                borderwidth=1,
+                font=dict(size=12, color='#1a1a1a')
             )
         )
         
