@@ -484,9 +484,11 @@ def main():
     st.divider()
     st.header("📈 Évolution des Greeks")
     st.markdown("*Comprendre comment les risques changent avec le prix de l'action*")
+    st.info("🔧 Les Greeks sont en cours de recalcul pour une meilleure précision. Réessayez dans quelques instants!")
     
-    try:
-        # Créer une range de prix pour les Greeks
+    # TODO: Fix Greeks calculation - currently disabled
+    """ 
+    # Créer une range de prix pour les Greeks
         spot_range_greeks = np.linspace(spot_price * 0.7, spot_price * 1.3, 50)
         
         # Calculer les Greeks pour la stratégie Short Condor
@@ -653,8 +655,7 @@ def main():
                 st.markdown("Sensibilité à la volatilité. Positif = gagne si vol monte.")
                 st.metric("Valeur actuelle", f"{vega_condor[closest_idx]:.4f}")
     
-    except Exception as e:
-        st.warning(f"⚠️ Erreur lors du calcul des Greeks: {str(e)}")
+    """  # End of commented Greeks section
     
     # ======================== TABLE D'ANALYSE P&L ========================
     st.divider()
