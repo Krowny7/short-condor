@@ -12,6 +12,12 @@ import plotly.express as px
 import json
 from datetime import datetime
 import io
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from binomial_engine import BinomialModel, MultiLegGreeksCalculator
 from strategy_manager import ShortCondor, StrategyParams, StrategyExecutor
 from market_data import MarketDataProvider, AVAILABLE_STOCKS
@@ -146,6 +152,173 @@ def export_to_csv(export_data, strategy, spot_price, K1, K2, K3, K4, quantity):
     csv_buffer.write("K4 (Short Put)," + str(K4) + "," + str(export_data["scenarios"]["at_k4"]) + "\n")
     
     return csv_buffer.getvalue()
+
+
+def export_to_pdf(export_data, strategy, spot_price, K1, K2, K3, K4, quantity, capital, maturity):
+    """Export data to PDF format with professional formatting"""
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    
+    # Create styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1f77b4'),
+        spaceAfter=12,
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#2ca02c'),
+        spaceAfter=10,
+        spaceBefore=10,
+        fontName='Helvetica-Bold'
+    )
+    normal_style = styles['Normal']
+    
+    # Build PDF content
+    elements = []
+    
+    # Title
+    elements.append(Paragraph("Short Condor Strategy Analysis Report", title_style))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Report Info
+    report_date = datetime.now().strftime("%B %d, %Y at %H:%M:%S")
+    elements.append(Paragraph(f"<b>Generated:</b> {report_date}", normal_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Strategy Configuration Section
+    elements.append(Paragraph("Strategy Configuration", heading_style))
+    
+    config_data = [
+        ["Parameter", "Value"],
+        ["Spot Price", f"€{spot_price:.2f}"],
+        ["Strike 1 (Short Call)", f"€{K1:.2f}"],
+        ["Strike 2 (Long Call)", f"€{K2:.2f}"],
+        ["Strike 3 (Long Put)", f"€{K3:.2f}"],
+        ["Strike 4 (Short Put)", f"€{K4:.2f}"],
+        ["Interest Rate", f"{export_data['strategy_config']['interest_rate_pct']:.2f}%"],
+        ["Time to Expiration", f"{export_data['strategy_config']['time_to_expiration_years']:.4f} years"],
+        ["Volatility", f"{export_data['strategy_config']['volatility_pct']:.2f}%"],
+        ["Binomial Steps", f"{export_data['strategy_config']['binomial_steps']}"],
+        ["Quantity (Contracts)", f"{export_data['strategy_config']['quantity_contracts']}"],
+        ["Capital Available", f"€{capital:.2f}"],
+    ]
+    
+    config_table = Table(config_data, colWidths=[3*inch, 2*inch])
+    config_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+    ]))
+    elements.append(config_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Greeks Section
+    elements.append(Paragraph("Greeks at Current Price", heading_style))
+    
+    greeks_data = [
+        ["Greek", "Value", "Interpretation"],
+        ["Delta", f"{export_data['current_greeks']['delta']:.6f}", "Spot sensitivity"],
+        ["Gamma", f"{export_data['current_greeks']['gamma']:.6f}", "Delta change rate"],
+        ["Theta", f"{export_data['current_greeks']['theta']:.6f}", "Time decay per day"],
+        ["Vega", f"{export_data['current_greeks']['vega']:.6f}", "Volatility sensitivity"],
+    ]
+    
+    greeks_table = Table(greeks_data, colWidths=[1.5*inch, 2*inch, 2.5*inch])
+    greeks_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2ca02c')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    elements.append(greeks_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Scenario Analysis
+    elements.append(Paragraph("Scenario Analysis", heading_style))
+    
+    scenarios_data = [
+        ["Scenario", "Stock Price", "P&L (€)"],
+        ["Crash (S -20%)", f"€{spot_price * 0.8:.2f}", f"{export_data['scenarios']['crash_20']:.2f}"],
+        ["Down (S -10%)", f"€{spot_price * 0.9:.2f}", f"{export_data['scenarios']['down_10']:.2f}"],
+        ["Current Price", f"€{spot_price:.2f}", f"{export_data['scenarios']['current']:.2f}"],
+        ["Up (S +10%)", f"€{spot_price * 1.1:.2f}", f"{export_data['scenarios']['up_10']:.2f}"],
+        ["Peak (S +20%)", f"€{spot_price * 1.2:.2f}", f"{export_data['scenarios']['peak_20']:.2f}"],
+    ]
+    
+    scenarios_table = Table(scenarios_data, colWidths=[2*inch, 2*inch, 2*inch])
+    scenarios_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#ff7f0e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightyellow),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    elements.append(scenarios_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Key Levels
+    elements.append(Paragraph("Key Levels Analysis", heading_style))
+    
+    levels_data = [
+        ["Level", "Strike Price", "P&L (€)"],
+        ["K1 (Short Call)", f"€{K1:.2f}", f"{export_data['scenarios']['at_k1']:.2f}"],
+        ["K2 (Long Call)", f"€{K2:.2f}", f"{export_data['scenarios']['at_k2']:.2f}"],
+        ["K3 (Long Put)", f"€{K3:.2f}", f"{export_data['scenarios']['at_k3']:.2f}"],
+        ["K4 (Short Put)", f"€{K4:.2f}", f"{export_data['scenarios']['at_k4']:.2f}"],
+    ]
+    
+    levels_table = Table(levels_data, colWidths=[2*inch, 2*inch, 2*inch])
+    levels_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d62728')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightcyan),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+    ]))
+    elements.append(levels_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Footer
+    elements.append(PageBreak())
+    footer_text = """
+    <b>Disclaimer:</b> This report is provided for educational and demonstration purposes only. 
+    This is not financial advice. The Short Condor Strategy Analyzer is a tool for learning and 
+    analysis. Always consult a qualified financial advisor before trading. Past performance does 
+    not guarantee future results. Options trading involves substantial risk and is not suitable for all investors.
+    """
+    elements.append(Paragraph(footer_text, normal_style))
+    
+    # Build PDF
+    doc.build(elements)
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
 
 
 def main():
@@ -826,7 +999,7 @@ def main():
     st.divider()
     st.header("📥 Export & Reports")
     
-    col_export1, col_export2 = st.columns([1, 1])
+    col_export1, col_export2, col_export3 = st.columns([1, 1, 1])
     
     # Generate export data
     try:
@@ -868,11 +1041,24 @@ def main():
                 use_container_width=True
             )
         
+        with col_export3:
+            st.subheader("📋 Download PDF Report")
+            pdf_data = export_to_pdf(export_data, strategy, spot_price, K1, K2, K3, K4, quantity, capital, maturity)
+            filename_pdf = f"Short_Condor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            st.download_button(
+                label="⬇️ Download PDF",
+                data=pdf_data,
+                file_name=filename_pdf,
+                mime="application/pdf",
+                use_container_width=True
+            )
+        
         st.info(
             "💡 **Export Information:**\n\n"
             "- **JSON**: Complete strategy data in machine-readable format (configuration, Greeks, scenarios)\n"
-            "- **CSV**: Formatted tables for spreadsheet applications (Excel, Sheets, etc.)\n\n"
-            "Both exports include: Strategy parameters, Current Greeks, Scenario analysis, Key levels P&L"
+            "- **CSV**: Formatted tables for spreadsheet applications (Excel, Sheets, etc.)\n"
+            "- **PDF**: Professional formatted report with all analysis data and tables\n\n"
+            "All exports include: Strategy parameters, Current Greeks, Scenario analysis, Key levels P&L"
         )
     
     except Exception as e:
