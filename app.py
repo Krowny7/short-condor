@@ -532,8 +532,8 @@ def main():
         
         # Debug: Vérifier les valeurs
         print(f"DEBUG: delta_condor length = {len(delta_condor)}")
-        print(f"DEBUG: delta_condor[0] = {delta_condor[0] if delta_condor else 'EMPTY'}")
-        print(f"DEBUG: delta_condor min/max = {min(delta_condor) if delta_condor else 'N/A'} / {max(delta_condor) if delta_condor else 'N/A'}")
+        print(f"DEBUG: delta_condor[0] = {delta_condor[0]}")
+        print(f"DEBUG: delta_condor min/max = {np.min(delta_condor)} / {np.max(delta_condor)}")
         
         # Créer le graphique Plotly interactif
         fig_greeks = go.Figure()
@@ -608,27 +608,30 @@ def main():
         
         # Ajouter une explication des Greeks
         with st.expander("📚 Comprendre les Greeks"):
+            # Trouver l'index du spot le plus proche
+            closest_idx = int(np.argmin(np.abs(spot_range_greeks - spot_price)))
+            
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 st.markdown("**Delta (Δ)**")
                 st.markdown("Combien l'option change vs l'action. Entre -1 et +1.")
-                st.metric("Valeur actuelle", f"{delta_condor[np.argmin(np.abs(spot_range_greeks - spot_price))]:.4f}")
+                st.metric("Valeur actuelle", f"{delta_condor[closest_idx]:.4f}")
             
             with col2:
                 st.markdown("**Gamma (Γ)**")
                 st.markdown("Rapidité du changement du Delta. Plus élevé = plus risqué.")
-                st.metric("Valeur actuelle", f"{gamma_condor[np.argmin(np.abs(spot_range_greeks - spot_price))]:.4f}")
+                st.metric("Valeur actuelle", f"{gamma_condor[closest_idx]:.4f}")
             
             with col3:
                 st.markdown("**Theta (Θ)**")
                 st.markdown("Gain/Perte par jour (time decay). Positif = gagne avec le temps.")
-                st.metric("€/jour", f"{theta_condor[np.argmin(np.abs(spot_range_greeks - spot_price))]:.4f}")
+                st.metric("€/jour", f"{theta_condor[closest_idx]:.4f}")
             
             with col4:
                 st.markdown("**Vega (ν)**")
                 st.markdown("Sensibilité à la volatilité. Positif = gagne si vol monte.")
-                st.metric("Valeur actuelle", f"{vega_condor[np.argmin(np.abs(spot_range_greeks - spot_price))]:.4f}")
+                st.metric("Valeur actuelle", f"{vega_condor[closest_idx]:.4f}")
     
     except Exception as e:
         st.warning(f"⚠️ Erreur lors du calcul des Greeks: {str(e)}")
