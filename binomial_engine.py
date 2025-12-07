@@ -1,5 +1,6 @@
 """
 Module for Binomial Option Pricing using Cox-Ross-Rubinstein (CRR) Model
+Uses numerical differentiation for Greeks calculation - NO scipy dependency
 """
 
 import numpy as np
