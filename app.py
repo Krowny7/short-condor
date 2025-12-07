@@ -613,6 +613,19 @@ def main():
         
         st.plotly_chart(fig_greeks, use_container_width=True)
         
+        # Afficher les données brutes pour vérifier
+        with st.expander("🔧 Données brutes des Greeks (Debug)"):
+            col_debug1, col_debug2 = st.columns(2)
+            with col_debug1:
+                st.write("**Premières valeurs:**")
+                st.write(f"Delta: {delta_condor[:5]}")
+                st.write(f"Gamma: {gamma_condor[:5]}")
+            with col_debug2:
+                st.write("**Dernières valeurs:**")
+                st.write(f"Delta: {delta_condor[-5:]}")
+                st.write(f"Gamma: {gamma_condor[-5:]}")
+        
+        
         # Ajouter une explication des Greeks
         with st.expander("📚 Comprendre les Greeks"):
             # Trouver l'index du spot le plus proche
