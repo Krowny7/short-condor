@@ -585,6 +585,17 @@ def main():
             font=dict(size=12),
             plot_bgcolor='rgba(245, 245, 247, 0.5)',
             paper_bgcolor='white',
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                yanchor="top",
+                y=0.99,
+                xanchor="right",
+                x=0.99,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+                bordercolor="rgba(0, 0, 0, 0.2)",
+                borderwidth=1
+            )
         )
         
         st.plotly_chart(fig_greeks, use_container_width=True)
