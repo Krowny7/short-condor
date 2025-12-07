@@ -492,10 +492,10 @@ def main():
         # Calculer les Greeks pour la stratégie Short Condor
         # On va calculer les Greeks pour chaque leg et les combiner
         
-        delta_condor = []
-        gamma_condor = []
-        theta_condor = []
-        vega_condor = []
+        delta_condor = np.array([])
+        gamma_condor = np.array([])
+        theta_condor = np.array([])
+        vega_condor = np.array([])
         
         for S in spot_range_greeks:
             # Créer un model temporaire pour ce spot
@@ -525,10 +525,15 @@ def main():
             theta = -greeks_k1_call['theta'][0] + greeks_k2_call['theta'][0] + greeks_k3_put['theta'][0] - greeks_k4_put['theta'][0]
             vega = -greeks_k1_call['vega'][0] + greeks_k2_call['vega'][0] + greeks_k3_put['vega'][0] - greeks_k4_put['vega'][0]
             
-            delta_condor.append(delta)
-            gamma_condor.append(gamma)
-            theta_condor.append(theta)
-            vega_condor.append(vega)
+            delta_condor = np.append(delta_condor, delta)
+            gamma_condor = np.append(gamma_condor, gamma)
+            theta_condor = np.append(theta_condor, theta)
+            vega_condor = np.append(vega_condor, vega)
+        
+        # Debug: Vérifier les valeurs
+        print(f"DEBUG: delta_condor length = {len(delta_condor)}")
+        print(f"DEBUG: delta_condor[0] = {delta_condor[0] if delta_condor else 'EMPTY'}")
+        print(f"DEBUG: delta_condor min/max = {min(delta_condor) if delta_condor else 'N/A'} / {max(delta_condor) if delta_condor else 'N/A'}")
         
         # Créer le graphique Plotly interactif
         fig_greeks = go.Figure()
