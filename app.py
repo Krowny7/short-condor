@@ -542,7 +542,7 @@ def main():
                 name='Delta',
                 line=dict(color='#007AFF', width=2),
                 fillcolor='rgba(0, 122, 255, 0.2)',
-                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Delta: %{y:.6f}<extra></extra>'
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Delta: %{y:.4e}<extra></extra>'
             ))
             fig_delta.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_delta.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
@@ -563,7 +563,7 @@ def main():
                 name='Gamma',
                 line=dict(color='#34C759', width=2),
                 fillcolor='rgba(52, 199, 89, 0.2)',
-                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Gamma: %{y:.6f}<extra></extra>'
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Gamma: %{y:.4e}<extra></extra>'
             ))
             fig_gamma.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_gamma.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
@@ -584,7 +584,7 @@ def main():
                 name='Theta',
                 line=dict(color='#FF9500', width=2),
                 fillcolor='rgba(255, 149, 0, 0.2)',
-                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Theta: €%{y:.6f}/jour<extra></extra>'
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Theta: €%{y:.4e}/jour<extra></extra>'
             ))
             fig_theta.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_theta.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
@@ -605,7 +605,7 @@ def main():
                 name='Vega',
                 line=dict(color='#AF52DE', width=2),
                 fillcolor='rgba(175, 82, 222, 0.2)',
-                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Vega: %{y:.6f}<extra></extra>'
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Vega: %{y:.4e}<extra></extra>'
             ))
             fig_vega.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_vega.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
