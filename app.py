@@ -541,12 +541,15 @@ def main():
                 mode='lines', fill='tozeroy',
                 name='Delta',
                 line=dict(color='#007AFF', width=2),
-                fillcolor='rgba(0, 122, 255, 0.2)'
+                fillcolor='rgba(0, 122, 255, 0.2)',
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Delta: %{y:.6f}<extra></extra>'
             ))
+            fig_delta.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_delta.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
             fig_delta.update_layout(
                 height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
-                xaxis_title="Prix Spot (€)", yaxis_title="Delta"
+                xaxis_title="Prix Spot (€)", yaxis_title="Delta ([-1, +1])",
+                template='plotly_dark'
             )
             st.plotly_chart(fig_delta, use_container_width=True)
         
@@ -559,12 +562,15 @@ def main():
                 mode='lines', fill='tozeroy',
                 name='Gamma',
                 line=dict(color='#34C759', width=2),
-                fillcolor='rgba(52, 199, 89, 0.2)'
+                fillcolor='rgba(52, 199, 89, 0.2)',
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Gamma: %{y:.6f}<extra></extra>'
             ))
+            fig_gamma.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_gamma.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
             fig_gamma.update_layout(
                 height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
-                xaxis_title="Prix Spot (€)", yaxis_title="Gamma"
+                xaxis_title="Prix Spot (€)", yaxis_title="Gamma",
+                template='plotly_dark'
             )
             st.plotly_chart(fig_gamma, use_container_width=True)
         
@@ -577,12 +583,15 @@ def main():
                 mode='lines', fill='tozeroy',
                 name='Theta',
                 line=dict(color='#FF9500', width=2),
-                fillcolor='rgba(255, 149, 0, 0.2)'
+                fillcolor='rgba(255, 149, 0, 0.2)',
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Theta: €%{y:.6f}/jour<extra></extra>'
             ))
+            fig_theta.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_theta.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
             fig_theta.update_layout(
                 height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
-                xaxis_title="Prix Spot (€)", yaxis_title="Theta (€/jour)"
+                xaxis_title="Prix Spot (€)", yaxis_title="Theta (€/jour)",
+                template='plotly_dark'
             )
             st.plotly_chart(fig_theta, use_container_width=True)
         
@@ -594,13 +603,16 @@ def main():
                 x=spot_range_greeks, y=vega_arr,
                 mode='lines', fill='tozeroy',
                 name='Vega',
-                line=dict(color='#FF3B30', width=2),
-                fillcolor='rgba(255, 59, 48, 0.2)'
+                line=dict(color='#AF52DE', width=2),
+                fillcolor='rgba(175, 82, 222, 0.2)',
+                hovertemplate='<b>Prix: €%{x:.1f}</b><br>Vega: %{y:.6f}<extra></extra>'
             ))
+            fig_vega.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.3)
             fig_vega.add_vline(x=spot_price, line_dash="dash", line_color="gray", opacity=0.7)
             fig_vega.update_layout(
                 height=300, hovermode='x unified', margin=dict(l=40, r=40, t=40, b=40),
-                xaxis_title="Prix Spot (€)", yaxis_title="Vega"
+                xaxis_title="Prix Spot (€)", yaxis_title="Vega",
+                template='plotly_dark'
             )
             st.plotly_chart(fig_vega, use_container_width=True)
         
