@@ -1,5 +1,5 @@
 """
-Corrected Module for Iron Condor Strategy Management
+Short Condor Strategy Implementation (4 Calls)
 With proper Greeks calculation and validation
 """
 
@@ -8,28 +8,20 @@ from scipy.stats import norm
 from binomial_engine import BinomialModel
 from dataclasses import dataclass
 from typing import Tuple, Dict, List
-from enum import Enum
-
-
-class StrategyType(Enum):
-    """Strategy type enumeration"""
-    SHORT_IRON_CONDOR_CREDIT = "short_iron_condor_credit"
-    REVERSE_IRON_CONDOR_DEBIT = "reverse_iron_condor_debit"
 
 
 @dataclass
 class StrategyParams:
-    """Parameters for Iron Condor strategy."""
+    """Parameters for Short Condor strategy."""
     S: float  # Current spot price
-    K1: float  # Lowest strike (long put)
-    K2: float  # Second strike (short put)
-    K3: float  # Third strike (short call)
-    K4: float  # Highest strike (long call)
+    K1: float  # Lowest strike (sell call)
+    K2: float  # Second strike (buy call)
+    K3: float  # Third strike (buy call)
+    K4: float  # Highest strike (sell call)
     r: float  # Risk-free rate
     T: float  # Time to maturity (in years)
     sigma: float  # Volatility
     N: int  # Number of binomial steps
-    strategy_type: StrategyType = StrategyType.SHORT_IRON_CONDOR_CREDIT
     multiplier: int = 100  # Contract multiplier (typically 100)
 
 
@@ -61,15 +53,6 @@ class BlackScholesGreeks:
         return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
     
     @staticmethod
-    def put_price(S, K, r, T, sigma):
-        """European put price"""
-        if T <= 0:
-            return max(K - S, 0)
-        d1 = BlackScholesGreeks.d1(S, K, r, T, sigma)
-        d2 = BlackScholesGreeks.d2(S, K, r, T, sigma)
-        return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
-    
-    @staticmethod
     def call_delta(S, K, r, T, sigma):
         """Call delta"""
         if T <= 0:
@@ -78,16 +61,8 @@ class BlackScholesGreeks:
         return norm.cdf(d1)
     
     @staticmethod
-    def put_delta(S, K, r, T, sigma):
-        """Put delta"""
-        if T <= 0:
-            return -1.0 if S < K else 0.0
-        d1 = BlackScholesGreeks.d1(S, K, r, T, sigma)
-        return norm.cdf(d1) - 1.0
-    
-    @staticmethod
     def gamma(S, K, r, T, sigma):
-        """Gamma for both calls and puts"""
+        """Gamma for calls"""
         if T <= 0 or sigma <= 0:
             return 0.0
         d1 = BlackScholesGreeks.d1(S, K, r, T, sigma)
@@ -112,83 +87,66 @@ class BlackScholesGreeks:
         if option_type == 'call':
             theta_value = (-S * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) 
                           - r * K * np.exp(-r * T) * norm.cdf(d2))
-        else:  # put
+        else:
             theta_value = (-S * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) 
                           + r * K * np.exp(-r * T) * norm.cdf(-d2))
         
-        # Convert to daily theta (divide by 365)
         return theta_value / 365.0
 
 
-class IronCondor:
+class ShortCondor:
     """
-    Iron Condor Strategy Implementation.
+    Short Condor Strategy Implementation (4 Calls).
     
-    SHORT IRON CONDOR (Credit Strategy):
     Structure:
-    - Long Put at K1 (protection)
-    - Short Put at K2 (income)
-    - Short Call at K3 (income)
-    - Long Call at K4 (protection)
+    - Sell Call at K1 (lowest strike)
+    - Buy Call at K2
+    - Buy Call at K3
+    - Sell Call at K4 (highest strike)
     
-    Condition: K1 < K2 < S0 < K3 < K4
+    Condition: K1 < K2 < K3 < K4
     
     Payoff Shape:
     - Maximum profit when spot stays between K2 and K3
-    - Limited losses on both sides (protected by long K1 put and long K4 call)
+    - Maximum loss at extremes (S < K1 or S > K4)
     - This is a CREDIT strategy (receive premium upfront)
     """
     
     def __init__(self, params: StrategyParams):
-        """Initialize Iron Condor strategy with parameters."""
+        """Initialize Short Condor strategy with parameters."""
         # Validate strike order
-        if not (params.K1 < params.K2 < params.S < params.K3 < params.K4):
+        if not (params.K1 < params.K2 < params.K3 < params.K4):
             raise ValueError(
-                f"For short iron condor: K1 < K2 < S < K3 < K4\n"
-                f"Got: K1={params.K1}, K2={params.K2}, S={params.S}, K3={params.K3}, K4={params.K4}"
+                f"For short condor: K1 < K2 < K3 < K4\n"
+                f"Got: K1={params.K1}, K2={params.K2}, K3={params.K3}, K4={params.K4}"
             )
         
         self.params = params
-        self.strategy_type = params.strategy_type
         
         # Define legs: (option_type, strike, weight)
-        # weight +1 = long, -1 = short
-        if params.strategy_type == StrategyType.SHORT_IRON_CONDOR_CREDIT:
-            self.legs = [
-                ('put', params.K1, +1),   # Long put
-                ('put', params.K2, -1),   # Short put
-                ('call', params.K3, -1),  # Short call
-                ('call', params.K4, +1),  # Long call
-            ]
-        else:  # REVERSE
-            self.legs = [
-                ('put', params.K1, -1),   # Short put
-                ('put', params.K2, +1),   # Long put
-                ('call', params.K3, +1),  # Long call
-                ('call', params.K4, -1),  # Short call
-            ]
+        # weight -1 = short, +1 = long
+        self.legs = [
+            ('call', params.K1, -1),   # Sell call K1
+            ('call', params.K2, +1),   # Buy call K2
+            ('call', params.K3, +1),   # Buy call K3
+            ('call', params.K4, -1),   # Sell call K4
+        ]
     
-    def _get_option_price(self, option_type: str, strike: float) -> float:
-        """Get option price using Black-Scholes"""
-        if option_type == 'call':
-            return BlackScholesGreeks.call_price(
-                self.params.S, strike, self.params.r, 
-                self.params.T, self.params.sigma
-            )
-        else:  # put
-            return BlackScholesGreeks.put_price(
-                self.params.S, strike, self.params.r, 
-                self.params.T, self.params.sigma
-            )
+    def _get_option_price(self, strike: float) -> float:
+        """Get call option price using Black-Scholes"""
+        return BlackScholesGreeks.call_price(
+            self.params.S, strike, self.params.r, 
+            self.params.T, self.params.sigma
+        )
     
     def strategy_cost(self) -> float:
         """
         Calculate net cost/credit of the strategy.
         
-        For short iron condor:
-        - We SELL (short) expensive options (K2 put, K3 call) -> receive credit
-        - We BUY (long) cheaper options (K1 put, K4 call) -> pay debit
-        - Net = Credit - Debit
+        For short condor:
+        - We SELL (short) expensive options (K1, K4) -> receive credit
+        - We BUY (long) cheaper options (K2, K3) -> pay debit
+        - Net = Credit - Debit (negative = credit received)
         
         Returns:
         --------
@@ -196,7 +154,7 @@ class IronCondor:
         """
         net_cost = 0.0
         for option_type, strike, weight in self.legs:
-            price = self._get_option_price(option_type, strike)
+            price = self._get_option_price(strike)
             # weight +1 (long) = we pay (cost increases)
             # weight -1 (short) = we receive (cost decreases)
             net_cost += weight * price
@@ -218,11 +176,8 @@ class IronCondor:
         payoff = 0.0
         
         for option_type, strike, weight in self.legs:
-            if option_type == 'call':
-                intrinsic = max(spot_at_expiry - strike, 0)
-            else:  # put
-                intrinsic = max(strike - spot_at_expiry, 0)
-            
+            # All options are calls
+            intrinsic = max(spot_at_expiry - strike, 0)
             # weight: +1 = long (we profit), -1 = short (we lose)
             payoff += weight * intrinsic
         
@@ -247,26 +202,17 @@ class IronCondor:
         greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
         
         for option_type, strike, weight in self.legs:
-            if option_type == 'call':
-                delta = BlackScholesGreeks.call_delta(
-                    spot, strike, self.params.r, self.params.T, self.params.sigma
-                )
-                theta = BlackScholesGreeks.theta(
-                    spot, strike, self.params.r, self.params.T, self.params.sigma, 'call'
-                )
-            else:  # put
-                delta = BlackScholesGreeks.put_delta(
-                    spot, strike, self.params.r, self.params.T, self.params.sigma
-                )
-                theta = BlackScholesGreeks.theta(
-                    spot, strike, self.params.r, self.params.T, self.params.sigma, 'put'
-                )
-            
+            delta = BlackScholesGreeks.call_delta(
+                spot, strike, self.params.r, self.params.T, self.params.sigma
+            )
             gamma = BlackScholesGreeks.gamma(
                 spot, strike, self.params.r, self.params.T, self.params.sigma
             )
             vega = BlackScholesGreeks.vega(
                 spot, strike, self.params.r, self.params.T, self.params.sigma
+            )
+            theta = BlackScholesGreeks.theta(
+                spot, strike, self.params.r, self.params.T, self.params.sigma, 'call'
             )
             
             # Apply weight and accumulate
@@ -341,7 +287,7 @@ class IronCondor:
                 breakevens.append(spot_range[i])
         
         return {
-            'strategy_type': self.strategy_type.value,
+            'strategy_type': 'short_condor_4calls',
             'net_cost': cost,
             'max_profit': max_profit,
             'max_loss': max_loss,
@@ -351,22 +297,12 @@ class IronCondor:
                 {
                     'type': leg[0],
                     'strike': leg[1],
-                    'position': 'LONG' if leg[2] > 0 else 'SHORT',
+                    'position': 'SHORT' if leg[2] < 0 else 'LONG',
                     'weight': leg[2]
                 }
                 for leg in self.legs
             ]
         }
-
-
-# Backward compatibility wrapper
-class ShortCondor(IronCondor):
-    """Backward compatibility alias for IronCondor"""
-    def __init__(self, params: StrategyParams):
-        # Ensure backward compatibility
-        if not hasattr(params, 'strategy_type'):
-            params.strategy_type = StrategyType.SHORT_IRON_CONDOR_CREDIT
-        super().__init__(params)
 
 
 class StrategyExecutor:
@@ -375,7 +311,7 @@ class StrategyExecutor:
     def __init__(self, capital: float):
         self.capital = capital
     
-    def max_quantity(self, strategy: IronCondor) -> int:
+    def max_quantity(self, strategy: ShortCondor) -> int:
         """Calculate max contracts given capital and max loss"""
         max_loss = -strategy.get_strategy_details()['max_loss']
         if max_loss <= 0:
@@ -385,7 +321,7 @@ class StrategyExecutor:
         max_contracts = int(self.capital / (max_loss * strategy.params.multiplier))
         return max(0, max_contracts)
     
-    def get_execution_summary(self, strategy: IronCondor, quantity: int) -> Dict:
+    def get_execution_summary(self, strategy: ShortCondor, quantity: int) -> Dict:
         """Get execution summary"""
         details = strategy.get_strategy_details()
         max_loss = -details['max_loss']

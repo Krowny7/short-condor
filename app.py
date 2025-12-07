@@ -382,61 +382,61 @@ def main():
             maturity = st.slider("Délai d'Expiration (années)", min_value=0.01, max_value=2.0, value=0.25, step=0.01)
             
             st.divider()
-            st.subheader("⚡ Iron Condor Strikes (€)")
+            st.subheader("⚡ Short Condor Strikes (€)")
             st.info(
                 f"📍 Current Price: €{spot_price:.2f}\n\n"
-                f"**Structure:** K1 (Long Put) < K2 (Short Put) < S < K3 (Short Call) < K4 (Long Call)"
+                f"**Structure:** K1 (Sell Call) < K2 (Buy Call) < K3 (Buy Call) < K4 (Sell Call)"
             )
             
             # Propose suggested strikes
             suggest_strikes = st.checkbox("💡 Get Suggested Strikes (±5% and ±10%)", value=True)
             
             if suggest_strikes:
-                # Calculate suggested strikes for iron condor
-                suggested_k1 = spot_price * 0.90  # Long put (5% OTM)
-                suggested_k2 = spot_price * 0.95  # Short put (5% OTM)
-                suggested_k3 = spot_price * 1.05  # Short call (5% OTM)
-                suggested_k4 = spot_price * 1.10  # Long call (10% OTM)
+                # Calculate suggested strikes for short condor (4 calls)
+                suggested_k1 = spot_price * 0.90  # Sell call (10% OTM)
+                suggested_k2 = spot_price * 0.95  # Buy call (5% OTM)
+                suggested_k3 = spot_price * 1.05  # Buy call (5% OTM)
+                suggested_k4 = spot_price * 1.10  # Sell call (10% OTM)
                 
                 col1, col2 = st.columns(2)
                 with col1:
                     K1 = st.number_input(
-                        "K1 - Long Put (Lowest Strike)",
+                        "K1 - Sell Call (Lowest Strike)",
                         min_value=10.0,
                         value=suggested_k1,
                         step=1.0,
-                        help=f"Protection put | Suggested: €{suggested_k1:.2f}"
+                        help=f"Income | Suggested: €{suggested_k1:.2f}"
                     )
                     K3 = st.number_input(
-                        "K3 - Short Call (High Strike)",
+                        "K3 - Buy Call (High Strike)",
                         min_value=10.0,
                         value=suggested_k3,
                         step=1.0,
-                        help=f"Income call | Suggested: €{suggested_k3:.2f}"
+                        help=f"Protection | Suggested: €{suggested_k3:.2f}"
                     )
                 with col2:
                     K2 = st.number_input(
-                        "K2 - Short Put (Low-Mid Strike)",
+                        "K2 - Buy Call (Low-Mid Strike)",
                         min_value=10.0,
                         value=suggested_k2,
                         step=1.0,
-                        help=f"Income put | Suggested: €{suggested_k2:.2f}"
+                        help=f"Protection | Suggested: €{suggested_k2:.2f}"
                     )
                     K4 = st.number_input(
-                        "K4 - Long Call (Highest Strike)",
+                        "K4 - Sell Call (Highest Strike)",
                         min_value=10.0,
                         value=suggested_k4,
                         step=1.0,
-                        help=f"Protection call | Suggested: €{suggested_k4:.2f}"
+                        help=f"Income | Suggested: €{suggested_k4:.2f}"
                     )
             else:
                 col1, col2 = st.columns(2)
                 with col1:
-                    K1 = st.number_input("K1 - Long Put (Lowest)", min_value=10.0, value=90.0, step=1.0)
-                    K3 = st.number_input("K3 - Short Call (High)", min_value=10.0, value=105.0, step=1.0)
+                    K1 = st.number_input("K1 - Sell Call (Lowest)", min_value=10.0, value=90.0, step=1.0)
+                    K3 = st.number_input("K3 - Buy Call (High)", min_value=10.0, value=105.0, step=1.0)
                 with col2:
-                    K2 = st.number_input("K2 - Short Put (Low-Mid)", min_value=10.0, value=95.0, step=1.0)
-                    K4 = st.number_input("K4 - Long Call (Highest)", min_value=10.0, value=110.0, step=1.0)
+                    K2 = st.number_input("K2 - Buy Call (Low-Mid)", min_value=10.0, value=95.0, step=1.0)
+                    K4 = st.number_input("K4 - Sell Call (Highest)", min_value=10.0, value=110.0, step=1.0)
             
             st.divider()
             st.subheader("💰 Capital Management")
@@ -528,7 +528,7 @@ def main():
         )
     
     # Display strategy legs clearly
-    st.info("📊 **Iron Condor Structure**")
+    st.info("📊 **Short Condor Structure (4 Calls)**")
     legs_data = []
     for leg in details['legs']:
         legs_data.append({
@@ -638,16 +638,16 @@ def main():
         from strategy_manager import BlackScholesGreeks
         
         call_K1 = BlackScholesGreeks.call_price(spot_price, K1, rate_decimal, maturity, vol_decimal)
-        put_K2 = BlackScholesGreeks.put_price(spot_price, K2, rate_decimal, maturity, vol_decimal)
+        call_K2 = BlackScholesGreeks.call_price(spot_price, K2, rate_decimal, maturity, vol_decimal)
         call_K3 = BlackScholesGreeks.call_price(spot_price, K3, rate_decimal, maturity, vol_decimal)
         call_K4 = BlackScholesGreeks.call_price(spot_price, K4, rate_decimal, maturity, vol_decimal)
         
         options_df = pd.DataFrame({
             "Leg": ["K1 (€" + f"{K1:.2f}" + ")", "K2 (€" + f"{K2:.2f}" + ")", 
                     "K3 (€" + f"{K3:.2f}" + ")", "K4 (€" + f"{K4:.2f}" + ")"],
-            "Type": ["Call", "Put", "Call", "Call"],
-            "Position": ["LONG", "SHORT", "SHORT", "LONG"],
-            "Price (€)": [f"{call_K1:.2f}", f"{put_K2:.2f}", f"{call_K3:.2f}", f"{call_K4:.2f}"]
+            "Type": ["Call", "Call", "Call", "Call"],
+            "Position": ["SHORT", "LONG", "LONG", "SHORT"],
+            "Price (€)": [f"{call_K1:.2f}", f"{call_K2:.2f}", f"{call_K3:.2f}", f"{call_K4:.2f}"]
         })
         
         st.dataframe(options_df, use_container_width=True, hide_index=True)
@@ -681,26 +681,30 @@ def main():
         
         st.divider()
         
-        st.subheader("📌 Iron Condor Logic")
+        st.subheader("📌 Short Condor Logic (4 Calls)")
         
         st.markdown("""
-        **Short Iron Condor (Credit Strategy):**
+        **Short Condor - Volatility Seller:**
         
-        **Long Positions (Protection):**
-        - **Long Put @ K1** - Downside protection
-        - **Long Call @ K4** - Upside protection
+        **Income Positions (Short Calls):**
+        - **Sell Call @ K1** - Collect premium (lowest strike)
+        - **Sell Call @ K4** - Collect premium (highest strike)
         
-        **Short Positions (Income):**
-        - **Short Put @ K2** - Collect premium
-        - **Short Call @ K3** - Collect premium
+        **Protection Positions (Long Calls):**
+        - **Buy Call @ K2** - Cap loss on lower side
+        - **Buy Call @ K3** - Cap loss on upper side
         
-        **Profit Zone:** When stock stays between K2 and K3
+        **Profit Zone:** When stock stays between K2 and K3 at expiration
         
-        **Max Loss:** Limited to (K2-K1) or (K4-K3), whichever occurs
+        **Max Profit:** Net credit received (all options expire worthless between K2-K3)
         
-        **Best Case:** All options expire worthless (max profit = net credit)
+        **Max Loss:** Limited on both sides by the long calls
+        - Lower wing: max loss = (K2-K1)
+        - Upper wing: max loss = (K4-K3)
         
-        **Type:** Credit spread with defined risk
+        **Best For:** Low volatility markets, expects sideways movement
+        
+        **Greeks:** Short gamma (loses on big moves), short vega (loses if IV rises), positive theta (gains with time decay)
         """)
     
     # ======================== SECTION GRAPHIQUES ========================
