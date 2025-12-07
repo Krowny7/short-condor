@@ -19,7 +19,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from binomial_engine import BinomialModel, MultiLegGreeksCalculator
-from strategy_manager import Condor, StrategyParams, StrategyExecutor, StrategyType
+from strategy_manager import Condor, ShortCondor, StrategyParams, StrategyExecutor, StrategyType
 from market_data import MarketDataProvider, AVAILABLE_STOCKS
 
 
