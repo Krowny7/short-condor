@@ -437,36 +437,67 @@ def main():
             )
 
     # ======================== PAYOFF (PLOTLY) ========================
+    # ======================== PAYOFF CHART ========================
     st.divider()
     st.header("Payoff à l'échéance")
 
-    min_spot = spot_price * 0.7
-    max_spot = spot_price * 1.3
+    min_spot = float(spot_price) * 0.7
+    max_spot = float(spot_price) * 1.3
     spot_range = np.linspace(min_spot, max_spot, 250)
+
     payoff_contract = strategy.payoff_curve(spot_range) * multiplier
 
-    fig_payoff = go.Figure()
-    fig_payoff.add_trace(go.Scatter(
-        x=spot_range, y=payoff_contract,
+    # Séparer gain/perte (NaN pour casser la ligne et colorer proprement)
+    payoff_profit = np.where(payoff_contract >= 0, payoff_contract, np.nan)
+    payoff_loss   = np.where(payoff_contract < 0,  payoff_contract, np.nan)
+
+    fig = go.Figure()
+
+    # Zone gain (vert)
+    fig.add_trace(go.Scatter(
+        x=spot_range,
+        y=payoff_profit,
         mode="lines",
-        name="P&L (€/contrat)",
-        hovertemplate="Spot: €%{x:.2f}<br>P&L: €%{y:.2f}<extra></extra>"
+        name="Gain",
+        line=dict(color="green", width=3),
+        fill="tozeroy",
+        fillcolor="rgba(0, 128, 0, 0.18)",
+        hovertemplate="Spot: €%{x:.2f}<br>P&L: €%{y:.2f}<extra></extra>",
     ))
-    fig_payoff.add_hline(y=0, line_dash="solid", opacity=0.4)
 
-    for k, name in [(K1, "K1"), (K2, "K2"), (K3, "K3"), (K4, "K4")]:
-        fig_payoff.add_vline(x=float(k), line_dash="dash", opacity=0.4)
+    # Zone perte (rouge)
+    fig.add_trace(go.Scatter(
+        x=spot_range,
+        y=payoff_loss,
+        mode="lines",
+        name="Perte",
+        line=dict(color="red", width=3),
+        fill="tozeroy",
+        fillcolor="rgba(255, 0, 0, 0.18)",
+        hovertemplate="Spot: €%{x:.2f}<br>P&L: €%{y:.2f}<extra></extra>",
+    ))
 
-    fig_payoff.add_vline(x=float(spot_price), line_dash="dot", opacity=0.8)
+    # Ligne 0
+    fig.add_hline(y=0, line_width=1, line_color="gray", opacity=0.6)
 
-    fig_payoff.update_layout(
-        height=420,
+    # Traits verticaux (strikes + spot)
+    for k in [K1, K2, K3, K4]:
+        fig.add_vline(x=float(k), line_dash="dash", line_color="gray", opacity=0.6)
+
+    fig.add_vline(x=float(spot_price), line_dash="dot", line_color="black", opacity=0.7)
+
+    fig.update_layout(
+        title="Payoff à l'échéance",
         xaxis_title="Spot à l'échéance",
-        yaxis_title="P&L (€/contrat)",
+        yaxis_title="P&L (€ / contrat)",
         hovermode="x unified",
-        margin=dict(l=40, r=40, t=40, b=40),
+        height=420,
+        margin=dict(l=40, r=40, t=60, b=40),
     )
-    st.plotly_chart(fig_payoff, use_container_width=True)
+
+    # Streamlit: remplacer use_container_width par width='stretch'
+    st.plotly_chart(fig, width="stretch")
+
 
     # ======================== BINOMIAL TREE DISPLAY ========================
     st.divider()
