@@ -1,22 +1,23 @@
+# strategy_manager.py
 """
-Condor Strategy Implementation (Binomial CRR only)
-- Call Condor: +C(K1) -C(K2) -C(K3) +C(K4)
-- Iron Condor: +P(K1) -P(K2) -C(K3) +C(K4)
+Gestion de la stratégie : Short Iron Condor (credit) en binomial CRR.
 
-Greeks computed in binomial via finite differences (MultiLegGreeksCalculator).
+Structure (K1 < K2 < K3 < K4) :
+- Long Put  K1  (aile basse)
+- Short Put K2  (put vendu)
+- Short Call K3 (call vendu)
+- Long Call K4  (aile haute)
+
+Profit si S(T) reste dans la zone centrale [K2, K3].
+Pertes limitées par les ailes.
 """
 
-import numpy as np
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from enum import Enum
 
-from binomial_engine import BinomialModel, MultiLegGreeksCalculator
+import numpy as np
 
-
-class StrategyType(Enum):
-    CALL_CONDOR = "call_condor"
-    IRON_CONDOR = "iron_condor"
+from binomial_engine import BinomialModel
 
 
 @dataclass
@@ -26,224 +27,174 @@ class StrategyParams:
     K2: float
     K3: float
     K4: float
-    r: float
-    T: float
-    sigma: float
-    N: int
-    strategy_type: StrategyType = StrategyType.CALL_CONDOR
-    multiplier: int = 100
+    r: float       # taux en décimal (ex: 0.025)
+    T: float       # maturité en années
+    sigma: float   # vol en décimal (ex: 0.30)
+    N: int         # nb steps binomial
+    multiplier: int = 100  # 100 actions par contrat (par défaut)
 
 
-class Condor:
-    """
-    Condor en binomial (European options).
-    """
-
+class ShortIronCondor:
     def __init__(self, params: StrategyParams):
-        if not (params.K1 < params.K2 < params.K3 < params.K4):
-            raise ValueError(
-                f"Pour un condor : K1 < K2 < K3 < K4. "
-                f"Reçu : K1={params.K1}, K2={params.K2}, K3={params.K3}, K4={params.K4}"
-            )
+        self.p = params
+        self._validate()
 
-        self.params = params
+    def _validate(self) -> None:
+        p = self.p
+        if not (p.K1 < p.K2 < p.K3 < p.K4):
+            raise ValueError("Ordre des strikes invalide : il faut K1 < K2 < K3 < K4.")
+        if p.S <= 0 or p.T <= 0 or p.sigma <= 0:
+            raise ValueError("Paramètres invalides : S, T et sigma doivent être > 0.")
+        if p.N < 2:
+            raise ValueError("N doit être >= 2 pour un arbre binomial exploitable.")
 
-        if params.strategy_type == StrategyType.CALL_CONDOR:
-            # +C(K1) -C(K2) -C(K3) +C(K4)
-            self.legs: List[Tuple[str, float, int]] = [
-                ("call", params.K1, +1),
-                ("call", params.K2, -1),
-                ("call", params.K3, -1),
-                ("call", params.K4, +1),
-            ]
-        else:
-            # +P(K1) -P(K2) -C(K3) +C(K4)
-            self.legs = [
-                ("put",  params.K1, +1),
-                ("put",  params.K2, -1),
-                ("call", params.K3, -1),
-                ("call", params.K4, +1),
-            ]
+    # ---------- Pricing (binomial CRR) ----------
+    def _price_put(self, K: float) -> float:
+        m = BinomialModel(S=self.p.S, K=float(K), r=self.p.r, T=self.p.T, sigma=self.p.sigma, N=self.p.N)
+        return float(m.price_put())
 
-    def _leg_price(self, spot: float, option_type: str, strike: float) -> float:
-        m = BinomialModel(
-            S=float(spot),
-            K=float(strike),
-            r=float(self.params.r),
-            T=float(self.params.T),
-            sigma=float(self.params.sigma),
-            N=int(self.params.N),
-        )
-        return m.price_call() if option_type == "call" else m.price_put()
+    def _price_call(self, K: float) -> float:
+        m = BinomialModel(S=self.p.S, K=float(K), r=self.p.r, T=self.p.T, sigma=self.p.sigma, N=self.p.N)
+        return float(m.price_call())
 
-    def price(self, spot: float = None) -> float:
+    def legs_definition(self) -> List[Dict]:
+        # sign = +1 long, -1 short
+        return [
+            {"type": "put",  "K": float(self.p.K1), "sign": +1, "label": "Long Put K1"},
+            {"type": "put",  "K": float(self.p.K2), "sign": -1, "label": "Short Put K2"},
+            {"type": "call", "K": float(self.p.K3), "sign": -1, "label": "Short Call K3"},
+            {"type": "call", "K": float(self.p.K4), "sign": +1, "label": "Long Call K4"},
+        ]
+
+    def strategy_cost_per_share(self) -> float:
         """
-        Valeur aujourd'hui (PV) de la stratégie, par action.
-        > 0 : débit payé
-        < 0 : crédit reçu
+        Coût initial par action (€/share) :
+        somme(sign * prix_option)
+        Si négatif => crédit reçu.
         """
-        s = float(self.params.S) if spot is None else float(spot)
-        total = 0.0
-        for opt_type, K, sign in self.legs:
-            px = self._leg_price(s, opt_type, K)
-            total += sign * px
-        return float(total)
-
-    def strategy_cost(self) -> float:
-        """Alias (pour compatibilité) : prix aujourd'hui par action."""
-        return self.price(self.params.S)
-
-    def payoff_at_maturity(self, spot_at_expiry: float) -> float:
-        """
-        P&L à l'échéance par action = somme(sign * intrinsic) - prix_initial
-        (donc si crédit initial : prix_initial < 0 => on ajoute un gain)
-        """
-        ST = float(spot_at_expiry)
-        intrinsic_sum = 0.0
-
-        for opt_type, K, sign in self.legs:
-            if opt_type == "call":
-                intrinsic = max(ST - K, 0.0)
+        cost = 0.0
+        for leg in self.legs_definition():
+            if leg["type"] == "put":
+                px = self._price_put(leg["K"])
             else:
-                intrinsic = max(K - ST, 0.0)
-            intrinsic_sum += sign * intrinsic
+                px = self._price_call(leg["K"])
+            cost += leg["sign"] * px
+        return float(cost)
 
-        pnl = intrinsic_sum - self.price(self.params.S)
-        return float(pnl)
+    # ---------- Payoff ----------
+    @staticmethod
+    def _intrinsic_call(S: float, K: float) -> float:
+        return max(S - K, 0.0)
 
-    def payoff_curve(self, spot_range: np.ndarray) -> np.ndarray:
-        spot_range = np.array(spot_range, dtype=float)
-        return np.array([self.payoff_at_maturity(s) for s in spot_range], dtype=float)
+    @staticmethod
+    def _intrinsic_put(S: float, K: float) -> float:
+        return max(K - S, 0.0)
 
-    def get_greeks(self, spot: float) -> Dict[str, float]:
+    def payoff_at_maturity_per_share(self, ST: float) -> float:
         """
-        Greeks de la stratégie au spot donné (par action).
-        Calcul via MultiLegGreeksCalculator (binomial + différences finies).
+        Payoff à l’échéance par action (€/share),
+        en incluant le cashflow initial (crédit/débit).
         """
-        spot = float(spot)
+        credit = -self.strategy_cost_per_share()  # si cost<0 => credit>0
+        payoff = credit
+        for leg in self.legs_definition():
+            if leg["type"] == "put":
+                intr = self._intrinsic_put(ST, leg["K"])
+            else:
+                intr = self._intrinsic_call(ST, leg["K"])
+            payoff += leg["sign"] * intr
+        return float(payoff)
 
-        legs_cfg = [{"K": K, "type": opt, "sign": sign} for (opt, K, sign) in self.legs]
-        calc = MultiLegGreeksCalculator(
-            spot_range=np.array([spot], dtype=float),
-            legs=legs_cfg,
-            interest_rate=self.params.r,
-            time_to_maturity=self.params.T,
-            volatility=self.params.sigma,
-            n_steps=self.params.N,
-        )
-        g = calc.calculate_strategy_greeks()
-        return {
-            "delta": float(g["delta"][0]),
-            "gamma": float(g["gamma"][0]),
-            "theta": float(g["theta"][0]),
-            "vega": float(g["vega"][0]),
-        }
+    def payoff_curve_per_share(self, spot_range: np.ndarray) -> np.ndarray:
+        return np.array([self.payoff_at_maturity_per_share(float(s)) for s in spot_range], dtype=float)
 
-    def validate_greeks_numerically(self, spot: float, h_ratio: float = 0.002) -> Dict:
+    # ---------- Infos / métriques ----------
+    def breakevens(self) -> List[float]:
         """
-        Validation Delta/Gamma :
-        - on dérive numériquement la VALEUR (prix aujourd'hui), pas le payoff à l'échéance.
+        Approche numérique simple : on cherche les changements de signe du payoff.
         """
-        spot = float(spot)
-        h = max(0.01, h_ratio * spot)
-
-        V0 = self.price(spot)
-        Vup = self.price(spot + h)
-        Vdn = self.price(max(1e-6, spot - h))
-
-        delta_num = (Vup - Vdn) / (2.0 * h)
-        gamma_num = (Vup - 2.0 * V0 + Vdn) / (h ** 2)
-
-        greeks = self.get_greeks(spot)
-        delta_ana = greeks["delta"]
-        gamma_ana = greeks["gamma"]
-
-        delta_error = abs(delta_ana - delta_num)
-        gamma_error = abs(gamma_ana - gamma_num)
-
-        return {
-            "delta_analytical": delta_ana,
-            "delta_numerical": float(delta_num),
-            "delta_error": float(delta_error),
-            "gamma_analytical": gamma_ana,
-            "gamma_numerical": float(gamma_num),
-            "gamma_error": float(gamma_error),
-            "max_error": float(max(delta_error, gamma_error)),
-            "validation_passed": bool(max(delta_error, gamma_error) < 1e-3),
-        }
+        p = self.p
+        x = np.linspace(p.S * 0.5, p.S * 1.5, 2000)
+        y = self.payoff_curve_per_share(x)
+        sgn = np.sign(y)
+        idx = np.where(np.diff(sgn) != 0)[0]
+        bes: List[float] = []
+        for i in idx:
+            x0, x1 = x[i], x[i + 1]
+            y0, y1 = y[i], y[i + 1]
+            if (y1 - y0) == 0:
+                continue
+            # interpolation linéaire
+            xb = x0 - y0 * (x1 - x0) / (y1 - y0)
+            bes.append(float(xb))
+        bes = sorted(list(set([round(b, 6) for b in bes])))
+        return bes
 
     def get_strategy_details(self) -> Dict:
         """
-        Détails : coût (prix), max profit/loss à l'échéance, breakevens, legs.
-        Toutes les valeurs sont par action (pas multipliées).
+        Détails "présentables" pour l'app.
+        Tout est en €/share ici (l'app multiplie ensuite par multiplier).
         """
-        spot_min = self.params.K1 * 0.95
-        spot_max = self.params.K4 * 1.05
-        spot_range = np.linspace(spot_min, spot_max, 200)
+        p = self.p
+        cost = self.strategy_cost_per_share()
+        credit = -cost
 
-        payoff = self.payoff_curve(spot_range)
+        # payoff à l’échéance sur une grille large
+        spot_grid = np.linspace(p.S * 0.5, p.S * 1.5, 2000)
+        payoff_grid = self.payoff_curve_per_share(spot_grid)
 
-        cost = self.price(self.params.S)
-        max_profit = float(np.max(payoff))
-        max_loss = float(np.min(payoff))
+        max_profit = float(np.max(payoff_grid))
+        max_loss = float(np.min(payoff_grid))
 
-        # Breakevens : changements de signe du P&L
-        breakevens = []
-        for i in range(len(payoff) - 1):
-            if payoff[i] == 0:
-                breakevens.append(float(spot_range[i]))
-            if payoff[i] * payoff[i + 1] < 0:
-                breakevens.append(float(spot_range[i]))
-
-        legs_out = []
-        for opt_type, K, sign in self.legs:
-            legs_out.append({
-                "type": opt_type.upper(),
-                "strike": float(K),
-                "position": "LONG" if sign > 0 else "SHORT",
-                "weight": int(sign),
+        legs = []
+        for leg in self.legs_definition():
+            legs.append({
+                "leg": leg["label"],
+                "type": leg["type"],
+                "strike": leg["K"],
+                "position": "LONG" if leg["sign"] > 0 else "SHORT",
+                "sign": leg["sign"],
             })
 
         return {
-            "strategy_enum": self.params.strategy_type.value,
-            "net_cost": float(cost),
-            "max_profit": max_profit,
-            "max_loss": max_loss,
-            "breakeven_points": breakevens,
-            "legs": legs_out,
+            "net_cost_per_share": float(cost),
+            "net_credit_per_share": float(credit),
+            "max_profit_per_share": float(max_profit),
+            "max_loss_per_share": float(max_loss),
+            "breakeven_points": self.breakevens(),
+            "legs": legs,
         }
 
 
-# Alias compatibilité
-ShortCondor = Condor
-
-
 class StrategyExecutor:
+    """
+    Gestion du capital : combien de contrats max acheter/vendre selon la perte max.
+    Ici on se base sur la perte max à l’échéance (approx).
+    """
+
     def __init__(self, capital: float):
         self.capital = float(capital)
 
-    def max_quantity(self, strategy: Condor) -> int:
-        details = strategy.get_strategy_details()
-        max_loss_per_share = -float(details["max_loss"])  # positive
-        if max_loss_per_share <= 0:
+    def max_quantity(self, strategy: ShortIronCondor) -> int:
+        d = strategy.get_strategy_details()
+        max_loss_per_share = float(d["max_loss_per_share"])  # négatif
+        if max_loss_per_share >= 0:
             return 0
+        max_loss_per_contract = abs(max_loss_per_share) * strategy.p.multiplier
+        if max_loss_per_contract <= 0:
+            return 0
+        return int(self.capital // max_loss_per_contract)
 
-        mult = int(strategy.params.multiplier)
-        max_contracts = int(self.capital / (max_loss_per_share * mult))
-        return max(0, max_contracts)
-
-    def get_execution_summary(self, strategy: Condor, quantity: int) -> Dict:
-        details = strategy.get_strategy_details()
-        max_loss_per_share = -float(details["max_loss"])
-        mult = int(strategy.params.multiplier)
-
-        total_max_loss = max_loss_per_share * quantity * mult
-        util = (total_max_loss / self.capital * 100.0) if self.capital > 0 else 0.0
+    def get_execution_summary(self, strategy: ShortIronCondor, qty: int) -> Dict:
+        d = strategy.get_strategy_details()
+        max_loss_per_contract = abs(float(d["max_loss_per_share"])) * strategy.p.multiplier
+        total_max_loss = max_loss_per_contract * int(qty)
+        util = 0.0 if self.capital <= 0 else (total_max_loss / self.capital) * 100.0
         remaining = self.capital - total_max_loss
-
         return {
+            "qty": int(qty),
+            "max_loss_per_contract": float(max_loss_per_contract),
             "total_max_loss": float(total_max_loss),
             "capital_utilization_pct": float(util),
             "capital_remaining": float(remaining),
-            "quantity": int(quantity),
         }
