@@ -424,7 +424,7 @@ def main():
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     with c3:
-        st.subheader("Comment présenter la stratégie (oral)")
+        st.subheader("Présentation de la stratégie")
         if strategy_type == StrategyType.CALL_CONDOR:
             st.markdown(
                 "Call condor : on combine 4 calls. L'idée est de gagner si le sous-jacent finit entre K2 et K3. "
