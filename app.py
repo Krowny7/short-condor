@@ -27,6 +27,7 @@ from reportlab.lib.enums import TA_CENTER
 
 from binomial_engine import BinomialModel, MultiLegGreeksCalculator
 from strategy_manager import StrategyParams, ShortIronCondor, StrategyExecutor
+
 from market_data import MarketDataProvider, AVAILABLE_STOCKS
 
 
