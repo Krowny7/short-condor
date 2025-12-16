@@ -1,320 +1,226 @@
-"""
-Module for Binomial Option Pricing using Cox-Ross-Rubinstein (CRR) Model
-Uses numerical differentiation for Greeks calculation - NO scipy dependency
-"""
+from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Dict, Any, List
+import math
 import numpy as np
-from typing import Dict, List
 
 
+@dataclass
 class BinomialModel:
     """
-    Binomial option pricing model using Cox-Ross-Rubinstein approach.
+    CRR binomial model (European options).
 
-    Parameters:
-    -----------
-    S : float
-        Current spot price of the underlying asset
-    K : float
-        Strike price of the option
-    r : float
-        Risk-free interest rate (annual, decimal)
-    T : float
-        Time to maturity (in years)
-    sigma : float
-        Volatility (annual, decimal)
-    N : int
-        Number of steps in the binomial tree
+    Parameters
+    ----------
+    S : spot
+    K : strike
+    r : risk-free annual rate (decimal)
+    T : time to maturity in years
+    sigma : annual volatility (decimal)
+    N : number of binomial steps
     """
+    S: float
+    K: float
+    r: float
+    T: float
+    sigma: float
+    N: int
 
-    def __init__(self, S: float, K: float, r: float, T: float, sigma: float, N: int):
-        self.S = float(S)
-        self.K = float(K)
-        self.r = float(r)
-        self.T = float(T)
-        self.sigma = float(sigma)
-        self.N = int(N)
-
-        if self.S <= 0:
-            raise ValueError("S must be > 0")
-        if self.K <= 0:
-            raise ValueError("K must be > 0")
+    def _params(self):
+        if self.N <= 0:
+            raise ValueError("N must be >= 1")
         if self.T <= 0:
             raise ValueError("T must be > 0")
-        if self.sigma <= 0:
-            raise ValueError("sigma must be > 0")
-        if self.N < 1:
-            raise ValueError("N must be >= 1")
+        if self.S <= 0:
+            raise ValueError("S must be > 0")
+        if self.sigma < 0:
+            raise ValueError("sigma must be >= 0")
 
-        self.dt = self.T / self.N
+        dt = self.T / self.N
+        if dt <= 0:
+            raise ValueError("Invalid dt")
 
-        # CRR parameters
-        self.u = np.exp(self.sigma * np.sqrt(self.dt))
-        self.d = 1.0 / self.u
+        # CRR
+        u = math.exp(self.sigma * math.sqrt(dt)) if self.sigma > 0 else 1.0
+        d = 1.0 / u if u != 0 else 0.0
 
-        disc = np.exp(self.r * self.dt)
-        self.q = (disc - self.d) / (self.u - self.d)
+        disc = math.exp(-self.r * dt)
+        a = math.exp(self.r * dt)
 
-        # If parameters imply arbitrage, we fail clearly (better than silent wrong prices)
-        if not (0.0 < self.q < 1.0):
-            raise ValueError(
-                f"Invalid risk-neutral probability q={self.q:.6f}. "
-                f"Check inputs (r, sigma, T, N)."
-            )
+        if abs(u - d) < 1e-14:
+            # sigma ~ 0, degenerate: set q=0.5
+            q = 0.5
+        else:
+            q = (a - d) / (u - d)
+
+        # Clamp to avoid tiny numeric issues
+        q = max(0.0, min(1.0, q))
+
+        return dt, u, d, q, disc
 
     def price_call(self) -> float:
-        """Price a European call option using binomial tree."""
-        option_values = np.zeros(self.N + 1)
-
-        for j in range(self.N + 1):
-            S_T = self.S * (self.u ** (self.N - j)) * (self.d ** j)
-            option_values[j] = max(S_T - self.K, 0.0)
-
-        df = np.exp(-self.r * self.dt)
-        for i in range(self.N - 1, -1, -1):
-            new_values = np.zeros(i + 1)
-            for j in range(i + 1):
-                new_values[j] = df * (self.q * option_values[j] + (1.0 - self.q) * option_values[j + 1])
-            option_values = new_values
-
-        return float(option_values[0])
+        return self._price(option_type="call")
 
     def price_put(self) -> float:
-        """Price a European put option using binomial tree."""
-        option_values = np.zeros(self.N + 1)
+        return self._price(option_type="put")
 
-        for j in range(self.N + 1):
-            S_T = self.S * (self.u ** (self.N - j)) * (self.d ** j)
-            option_values[j] = max(self.K - S_T, 0.0)
+    def _price(self, option_type: str) -> float:
+        dt, u, d, q, disc = self._params()
 
-        df = np.exp(-self.r * self.dt)
-        for i in range(self.N - 1, -1, -1):
-            new_values = np.zeros(i + 1)
-            for j in range(i + 1):
-                new_values[j] = df * (self.q * option_values[j] + (1.0 - self.q) * option_values[j + 1])
-            option_values = new_values
+        # Terminal stock prices: S * u^j * d^(N-j)
+        j = np.arange(self.N + 1)
+        ST = self.S * (u ** j) * (d ** (self.N - j))
 
-        return float(option_values[0])
+        if option_type == "call":
+            values = np.maximum(ST - self.K, 0.0)
+        else:
+            values = np.maximum(self.K - ST, 0.0)
 
-    def get_tree_data(self) -> Dict:
+        # Backward induction
+        for _ in range(self.N):
+            values = disc * (q * values[1:] + (1.0 - q) * values[:-1])
+
+        return float(values[0])
+
+    def get_tree_data(self) -> Dict[str, Any]:
         """
-        Get tree structure for visualization (useful for small N).
-        Returns dict with stock prices + call/put prices at each node.
+        Return dict trees as triangular dicts {i:{j:value}}
+        i = time level (0..N)
+        j = node index (0..i) = number of up moves
         """
-        if self.N > 10:
-            return {"error": "Tree too large for visualization (N > 10)"}
+        try:
+            dt, u, d, q, disc = self._params()
+        except Exception as e:
+            return {"error": str(e)}
 
-        tree_data = {
-            "stock_prices": {},
-            "call_prices": {},
-            "put_prices": {},
-            "parameters": {
-                "S": self.S,
-                "K": self.K,
-                "r": self.r,
-                "T": self.T,
-                "sigma": self.sigma,
-                "N": self.N,
-                "u": self.u,
-                "d": self.d,
-                "q": self.q,
-                "dt": self.dt,
-            },
-        }
+        stock_prices: Dict[int, Dict[int, float]] = {}
+        call_prices: Dict[int, Dict[int, float]] = {}
+        put_prices: Dict[int, Dict[int, float]] = {}
 
         # Stock tree
         for i in range(self.N + 1):
-            tree_data["stock_prices"][i] = {}
+            stock_prices[i] = {}
             for j in range(i + 1):
-                tree_data["stock_prices"][i][j] = self.S * (self.u ** (i - j)) * (self.d ** j)
+                stock_prices[i][j] = float(self.S * (u ** j) * (d ** (i - j)))
 
-        df = np.exp(-self.r * self.dt)
-
-        # Call tree
-        call_last = {}
+        # Terminal option values
+        call_prices[self.N] = {}
+        put_prices[self.N] = {}
         for j in range(self.N + 1):
-            call_last[j] = max(tree_data["stock_prices"][self.N][j] - self.K, 0.0)
-        tree_data["call_prices"][self.N] = call_last
+            ST = stock_prices[self.N][j]
+            call_prices[self.N][j] = float(max(ST - self.K, 0.0))
+            put_prices[self.N][j] = float(max(self.K - ST, 0.0))
 
+        # Backward
         for i in range(self.N - 1, -1, -1):
-            tree_data["call_prices"][i] = {}
+            call_prices[i] = {}
+            put_prices[i] = {}
             for j in range(i + 1):
-                tree_data["call_prices"][i][j] = df * (
-                    self.q * tree_data["call_prices"][i + 1][j] +
-                    (1.0 - self.q) * tree_data["call_prices"][i + 1][j + 1]
-                )
+                call_up = call_prices[i + 1][j + 1]
+                call_dn = call_prices[i + 1][j]
+                put_up = put_prices[i + 1][j + 1]
+                put_dn = put_prices[i + 1][j]
 
-        # Put tree
-        put_last = {}
-        for j in range(self.N + 1):
-            put_last[j] = max(self.K - tree_data["stock_prices"][self.N][j], 0.0)
-        tree_data["put_prices"][self.N] = put_last
+                call_prices[i][j] = float(disc * (q * call_up + (1.0 - q) * call_dn))
+                put_prices[i][j] = float(disc * (q * put_up + (1.0 - q) * put_dn))
 
-        for i in range(self.N - 1, -1, -1):
-            tree_data["put_prices"][i] = {}
-            for j in range(i + 1):
-                tree_data["put_prices"][i][j] = df * (
-                    self.q * tree_data["put_prices"][i + 1][j] +
-                    (1.0 - self.q) * tree_data["put_prices"][i + 1][j + 1]
-                )
-
-        return tree_data
-
-    @staticmethod
-    def price_range_at_maturity(
-        S: float, K: float, r: float, T: float, sigma: float, N: int,
-        spot_range: np.ndarray, option_type: str = "call"
-    ) -> np.ndarray:
-        """Intrinsic payoff at maturity (payoff diagram)."""
-        if option_type.lower() == "call":
-            return np.maximum(spot_range - K, 0.0)
-        if option_type.lower() == "put":
-            return np.maximum(K - spot_range, 0.0)
-        raise ValueError("option_type must be 'call' or 'put'")
-
-    def calculate_greeks(self, spot_range: np.ndarray, option_type: str = "call") -> Dict[str, np.ndarray]:
-        """
-        Greeks via finite differences (Delta, Gamma, Theta, Vega)
-        - Delta/Gamma : central difference in spot
-        - Theta : difference by removing 1 day
-        - Vega : bump sigma
-
-        Returns arrays aligned with spot_range.
-        """
-        option_type = option_type.lower().strip()
-        if option_type not in ("call", "put"):
-            raise ValueError("option_type must be 'call' or 'put'")
-
-        greeks = {"delta": [], "gamma": [], "theta": [], "vega": []}
-
-        for S in spot_range:
-            S = float(S)
-            if S <= 0:
-                greeks["delta"].append(np.nan)
-                greeks["gamma"].append(np.nan)
-                greeks["theta"].append(np.nan)
-                greeks["vega"].append(np.nan)
-                continue
-
-            # Base price
-            base_model = BinomialModel(S, self.K, self.r, self.T, self.sigma, self.N)
-            V0 = base_model.price_call() if option_type == "call" else base_model.price_put()
-
-            # Spot bump (min absolute bump + relative bump)
-            bump = max(0.5, 0.005 * S)
-            S_up = S + bump
-            S_dn = max(1e-6, S - bump)
-
-            m_up = BinomialModel(S_up, self.K, self.r, self.T, self.sigma, self.N)
-            V_up = m_up.price_call() if option_type == "call" else m_up.price_put()
-
-            m_dn = BinomialModel(S_dn, self.K, self.r, self.T, self.sigma, self.N)
-            V_dn = m_dn.price_call() if option_type == "call" else m_dn.price_put()
-
-            delta = (V_up - V_dn) / (S_up - S_dn)
-            gamma = (V_up - 2.0 * V0 + V_dn) / ((0.5 * (S_up - S_dn)) ** 2)
-
-            # Theta : remove 1 day
-            theta_bump = 1.0 / 365.0
-            T_new = max(self.T - theta_bump, 1e-6)
-            m_t = BinomialModel(S, self.K, self.r, T_new, self.sigma, self.N)
-            V_t = m_t.price_call() if option_type == "call" else m_t.price_put()
-            theta = (V_t - V0) / theta_bump  # per year, negative is usual for long options
-
-            # Vega : bump sigma
-            vol_bump = max(0.001, 0.005 * self.sigma)
-            m_v = BinomialModel(S, self.K, self.r, self.T, self.sigma + vol_bump, self.N)
-            V_v = m_v.price_call() if option_type == "call" else m_v.price_put()
-            vega = (V_v - V0) / vol_bump  # per 1.00 vol (i.e. per +100%)
-
-            greeks["delta"].append(delta)
-            greeks["gamma"].append(gamma)
-            greeks["theta"].append(theta)
-            greeks["vega"].append(vega)
-
-        return {k: np.array(v, dtype=float) for k, v in greeks.items()}
+        return {
+            "stock_prices": stock_prices,
+            "call_prices": call_prices,
+            "put_prices": put_prices,
+        }
 
 
 class MultiLegGreeksCalculator:
     """
-    Greeks calculator for multi-leg strategies.
-    Uses BinomialModel.calculate_greeks per leg, then sums with signs.
+    Compute strategy greeks by finite differences using BinomialModel.
+
+    legs = list of dict:
+      {"K": float, "type": "call"/"put", "sign": +1/-1}
     """
 
     def __init__(
         self,
         spot_range: np.ndarray,
-        legs: List[Dict],
+        legs: List[dict],
         interest_rate: float,
         time_to_maturity: float,
         volatility: float,
-        n_steps: int = 50,
+        n_steps: int,
     ):
-        self.spot_range = np.array(spot_range, dtype=float)
+        self.spot_range = np.asarray(spot_range, dtype=float)
         self.legs = legs
         self.r = float(interest_rate)
         self.T = float(time_to_maturity)
         self.sigma = float(volatility)
         self.N = int(n_steps)
 
-        self.legs_greeks = self._compute_legs_greeks()
+    def _price_strategy(self, S: float, T: float | None = None, sigma: float | None = None) -> float:
+        T_ = self.T if T is None else float(T)
+        sig_ = self.sigma if sigma is None else float(sigma)
 
-    def _compute_legs_greeks(self) -> List[Dict]:
-        legs_greeks = []
-
+        total = 0.0
         for leg in self.legs:
-            K = float(leg["K"])
-            option_type = leg["type"].lower().strip()
-            sign = float(leg["sign"])
-
-            # Dummy model (real prices computed inside calculate_greeks anyway)
-            model = BinomialModel(
-                S=float(self.spot_range[0]),
-                K=K,
+            m = BinomialModel(
+                S=float(S),
+                K=float(leg["K"]),
                 r=self.r,
-                T=self.T,
-                sigma=self.sigma,
+                T=T_,
+                sigma=sig_,
                 N=self.N,
             )
+            if leg["type"] == "call":
+                px = m.price_call()
+            else:
+                px = m.price_put()
+            total += float(leg["sign"]) * px
+        return float(total)
 
-            greeks = model.calculate_greeks(self.spot_range, option_type)
+    def calculate_strategy_greeks(self) -> dict:
+        # Prices along spot curve
+        V = np.array([self._price_strategy(S) for S in self.spot_range], dtype=float)
 
-            legs_greeks.append({
-                "delta": greeks["delta"],
-                "gamma": greeks["gamma"],
-                "theta": greeks["theta"],
-                "vega": greeks["vega"],
-                "sign": sign,
-                "K": K,
-                "type": option_type,
-            })
+        # Bumps
+        # delta/gamma: bump in spot
+        dS = np.maximum(0.01 * self.spot_range, 0.50)  # at least 0.50 currency unit
+        V_up = np.array([self._price_strategy(S + bump) for S, bump in zip(self.spot_range, dS)], dtype=float)
+        V_dn = np.array([self._price_strategy(max(1e-9, S - bump)) for S, bump in zip(self.spot_range, dS)], dtype=float)
 
-        return legs_greeks
+        delta = (V_up - V_dn) / (2.0 * dS)
+        gamma = (V_up - 2.0 * V + V_dn) / (dS ** 2)
 
-    def calculate_strategy_greeks(self) -> Dict[str, np.ndarray]:
-        strategy_greeks = {
-            "delta": np.zeros_like(self.spot_range, dtype=float),
-            "gamma": np.zeros_like(self.spot_range, dtype=float),
-            "theta": np.zeros_like(self.spot_range, dtype=float),
-            "vega": np.zeros_like(self.spot_range, dtype=float),
-        }
+        # Theta: 1 day
+        dT = 1.0 / 365.0
+        T_dn = max(1e-6, self.T - dT)
+        V_Tdn = np.array([self._price_strategy(S, T=T_dn) for S in self.spot_range], dtype=float)
+        theta = (V_Tdn - V) / dT  # dV/dT (approx). Often reported negative for decay; here it's derivative.
 
-        for lg in self.legs_greeks:
-            s = lg["sign"]
-            strategy_greeks["delta"] += s * lg["delta"]
-            strategy_greeks["gamma"] += s * lg["gamma"]
-            strategy_greeks["theta"] += s * lg["theta"]
-            strategy_greeks["vega"] += s * lg["vega"]
+        # Vega: +1% vol bump (0.01 in decimal)
+        dSig = 0.01
+        V_sig_up = np.array([self._price_strategy(S, sigma=self.sigma + dSig) for S in self.spot_range], dtype=float)
+        vega = (V_sig_up - V) / dSig
 
-        return strategy_greeks
+        return {"price": V, "delta": delta, "gamma": gamma, "theta": theta, "vega": vega}
 
-    def get_greeks_at_spot(self, spot: float) -> Dict[str, float]:
-        spot = float(spot)
-        idx = int(np.argmin(np.abs(self.spot_range - spot)))
-        g = self.calculate_strategy_greeks()
-        return {
-            "delta": float(g["delta"][idx]),
-            "gamma": float(g["gamma"][idx]),
-            "theta": float(g["theta"][idx]),
-            "vega": float(g["vega"][idx]),
-        }
+    def get_greeks_at_spot(self, spot: float) -> dict:
+        # Compute at single point with same method
+        S = float(spot)
+        V = self._price_strategy(S)
+
+        dS = max(0.01 * S, 0.50)
+        V_up = self._price_strategy(S + dS)
+        V_dn = self._price_strategy(max(1e-9, S - dS))
+        delta = (V_up - V_dn) / (2.0 * dS)
+        gamma = (V_up - 2.0 * V + V_dn) / (dS ** 2)
+
+        dT = 1.0 / 365.0
+        T_dn = max(1e-6, self.T - dT)
+        V_Tdn = self._price_strategy(S, T=T_dn)
+        theta = (V_Tdn - V) / dT
+
+        dSig = 0.01
+        V_sig_up = self._price_strategy(S, sigma=self.sigma + dSig)
+        vega = (V_sig_up - V) / dSig
+
+        return {"price": V, "delta": delta, "gamma": gamma, "theta": theta, "vega": vega}
